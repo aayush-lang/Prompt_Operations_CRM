@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Riddler Recruit</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- AUTH SCREEN -->
+  <div id="auth-screen">
+    <div class="auth-wrap">
+      <div class="auth-card">
+        <div class="auth-brand">
+          <span class="brand-dot"></span>
+          <span class="brand-text"><strong>Riddler</strong> Recruit</span>
+        </div>
+        <h1 class="auth-title">Welcome back</h1>
+        <p class="auth-sub">Sign in to your recruitment workspace</p>
+        <div id="auth-error" class="auth-error" style="display:none"></div>
+        <div class="field-group">
+          <label>Email</label>
+          <input type="email" id="login-email" placeholder="you@riddlermedia.in" autocomplete="email" />
+        </div>
+        <div class="field-group">
+          <label>Password</label>
+          <input type="password" id="login-pw" placeholder="••••••••" autocomplete="current-password" />
+        </div>
+        <button class="btn-auth" id="login-btn" onclick="handleLogin()">Sign in</button>
+        <div class="auth-footer">
+          Riddler Media · Recruitment Ops · <a href="#" onclick="showForgot()">Forgot password?</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MAIN APP -->
+  <div id="app" style="display:none">
+    <header class="topbar">
+      <div class="topbar-left">
+        <div class="brand-mark">
+          <span class="brand-dot sm"></span>
+          <span><strong>Riddler</strong> Recruit</span>
+        </div>
+        <nav id="main-nav">
+          <button class="nav-btn active" data-view="dashboard">Dashboard</button>
+          <button class="nav-btn" data-view="leads">Candidates</button>
+          <button class="nav-btn" data-view="pipeline">Pipeline</button>
+          <button class="nav-btn" data-view="tasks">Tasks</button>
+          <button class="nav-btn" data-view="reminders">Reminders <span class="nav-badge" id="reminder-count" style="display:none">0</span></button>
+          <button class="nav-btn admin-only" data-view="settings">Settings</button>
+        </nav>
+      </div>
+      <div class="topbar-right">
+        <div class="user-chip">
+          <div class="user-avatar" id="user-avatar">AM</div>
+          <span id="user-name">User</span>
+          <button class="logout-btn" onclick="handleLogout()" title="Sign out">↩</button>
+        </div>
+      </div>
+    </header>
+
+    <main class="main-content">
+
+      <!-- DASHBOARD -->
+      <section class="view active" id="view-dashboard">
+        <div class="view-header">
+          <div><h2 class="view-title">Dashboard</h2><p class="view-sub" id="dash-date"></p></div>
+          <button class="btn-primary" onclick="openAddLead()">+ Add Candidate</button>
+        </div>
+        <div id="dash-period-filter" style="margin-bottom:1rem"></div>
+        <div class="metrics-row" id="metrics-row"></div>
+        <div class="dash-grid">
+          <div class="dash-card"><div class="dash-card-title">Pipeline by stage</div><div id="stage-bars"></div></div>
+          <div class="dash-card"><div class="dash-card-title">Profile distribution</div><div id="source-chart"></div></div>
+          <div class="dash-card"><div class="dash-card-title">Candidates added</div><div id="leads-created-chart-inner"></div></div>
+          <div class="dash-card"><div class="dash-card-title">Candidates followed up</div><div id="leads-followup-chart-inner"></div></div>
+          <div class="dash-card"><div class="dash-card-title">Follow-ups due today</div><div id="followups-today"></div></div>
+          <div class="dash-card admin-only"><div class="dash-card-title">Associate performance</div><div id="team-perf"></div></div>
+        </div>
+      </section>
+
+      <!-- CANDIDATES -->
+      <section class="view" id="view-leads">
+        <div class="view-header">
+          <div><h2 class="view-title">Candidates</h2><p class="view-sub" id="leads-count-label"></p></div>
+          <div style="display:flex;gap:8px">
+            <button class="btn-secondary" onclick="document.getElementById('csv-import').click()">↑ Import CSV</button>
+            <input type="file" id="csv-import" accept=".csv" style="display:none" onchange="importCSV(event)" />
+            <button class="btn-secondary" onclick="exportCSV()">↓ Export CSV</button>
+            <button class="btn-primary" onclick="openAddLead()">+ Add Candidate</button>
+          </div>
+        </div>
+
+        <!-- FILTERS -->
+        <div class="filter-bar">
+          <input class="search-input" type="search" id="search-q" placeholder="Search name, company, email, phone…" oninput="debounceFilter()" />
+          <select id="f-stage" class="filter-sel" onchange="applyFilters()"><option value="">All stages</option></select>
+          <select id="f-profile" class="filter-sel" onchange="applyFilters()"><option value="">All profiles</option></select>
+          <select id="f-location" class="filter-sel" onchange="applyFilters()"><option value="">All locations</option></select>
+          <select id="f-relocation" class="filter-sel" onchange="applyFilters()"><option value="">Any relocation</option></select>
+          <select id="f-assigned" class="filter-sel admin-only" onchange="applyFilters()"><option value="">All members</option></select>
+          <button class="filter-expand-btn" onclick="toggleAdvancedFilters()">More filters ▾</button>
+          <button class="btn-ghost" onclick="clearFilters()">Clear</button>
+        </div>
+        <div class="filter-bar advanced-filters" id="advanced-filters" style="display:none">
+          <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-2)">
+            CTC: <input type="number" id="f-ctc-min" placeholder="Min (₹)" class="filter-input-sm" onchange="applyFilters()">
+            – <input type="number" id="f-ctc-max" placeholder="Max (₹)" class="filter-input-sm" onchange="applyFilters()">
+          </div>
+          <div style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-2)">
+            Date: <input type="date" id="f-date-from" class="filter-input-sm" onchange="applyFilters()">
+            – <input type="date" id="f-date-to" class="filter-input-sm" onchange="applyFilters()">
+          </div>
+        </div>
+
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th><input type="checkbox" id="select-all" onchange="toggleSelectAll(this)" /></th>
+                <th class="sortable" data-col="name">Name / Company</th>
+                <th>Contact</th>
+                <th class="sortable" data-col="stage">Stage</th>
+                <th>Profile</th>
+                <th class="sortable" data-col="location">Location</th>
+                <th class="sortable" data-col="current_ctc">Current CTC</th>
+                <th>Assigned</th>
+                <th class="sortable" data-col="followup_date">Follow-up</th>
+                <th class="sortable" data-col="created_at">Added</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="leads-tbody"><tr><td colspan="11" class="empty-row"><div class="loader"></div></td></tr></tbody>
+          </table>
+          <div class="table-footer">
+            <div class="bulk-actions" id="bulk-actions" style="display:none">
+              <span id="selected-count">0 selected</span>
+              <select id="bulk-stage" class="filter-sel" style="font-size:12px"></select>
+              <button class="btn-secondary" onclick="bulkMoveStage()">Move Stage</button>
+              <div class="admin-only" style="display:contents">
+                <select id="bulk-assign-select" class="filter-sel" style="font-size:12px"></select>
+                <button class="btn-secondary" onclick="bulkAssign()">Assign</button>
+                <button class="btn-danger-sm" onclick="bulkDelete()">Delete</button>
+              </div>
+            </div>
+            <div class="pagination" id="pagination"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- PIPELINE BOARD -->
+      <section class="view" id="view-pipeline">
+        <div class="view-header">
+          <h2 class="view-title">Pipeline Board</h2>
+          <button class="btn-primary" onclick="openAddLead()">+ Add Candidate</button>
+        </div>
+        <div class="kanban-board" id="kanban-board"></div>
+      </section>
+
+      <!-- TASKS (Admin assigns tasks to associates) -->
+      <section class="view" id="view-tasks">
+        <div class="view-header">
+          <h2 class="view-title">Tasks</h2>
+          <button class="btn-primary admin-only" onclick="openAddTask()">+ New Task</button>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:1.25rem;align-items:center">
+          <select id="task-filter" class="filter-sel" onchange="renderTasks()">
+            <option value="open">Open tasks</option>
+            <option value="done">Completed</option>
+            <option value="all">All tasks</option>
+          </select>
+        </div>
+        <div id="tasks-list"></div>
+      </section>
+
+      <!-- REMINDERS -->
+      <section class="view" id="view-reminders">
+        <div class="view-header">
+          <h2 class="view-title">Reminders</h2>
+          <button class="btn-primary" onclick="openAddReminder()">+ Add Reminder</button>
+        </div>
+        <div class="reminder-tabs">
+          <button class="rem-tab active" data-filter="pending">Pending</button>
+          <button class="rem-tab" data-filter="today">Today</button>
+          <button class="rem-tab" data-filter="overdue">Overdue</button>
+          <button class="rem-tab" data-filter="done">Done</button>
+        </div>
+        <div id="reminders-list" class="reminders-list"></div>
+      </section>
+
+      <!-- SETTINGS (admin only) -->
+      <section class="view" id="view-settings">
+        <div class="view-header"><h2 class="view-title">Settings</h2></div>
+        <div class="settings-grid">
+          <div class="settings-card">
+            <div class="settings-card-title">Team Members</div>
+            <div id="team-list"></div>
+            <div style="margin-top:1rem;display:flex;gap:8px">
+              <input class="search-input" id="invite-email" placeholder="colleague@riddlermedia.in" style="flex:1" />
+              <button class="btn-primary" onclick="inviteTeamMember()">Invite</button>
+            </div>
+          </div>
+          <div class="settings-card">
+            <div class="settings-card-title">About</div>
+            <p style="font-size:13px;color:var(--text-2);line-height:1.6">Riddler Recruit is an internal recruitment operations CRM for Riddler Media. Associates coordinate with candidates; admins manage tasks and assignments.</p>
+            <p style="font-size:12px;color:var(--text-3);margin-top:12px">Role-based access: Admins see all candidates. Associates see only their assigned candidates.</p>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ── MODALS ── -->
+
+  <!-- Add / Edit Candidate -->
+  <div class="modal-overlay" id="add-lead-modal" onclick="overlayClose(event,this)" style="display:none">
+    <div class="modal modal-lg">
+      <div class="modal-header">
+        <h3 id="lead-modal-title">Add Candidate</h3>
+        <button class="modal-close" onclick="closeModal('add-lead-modal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="edit-lead-id" />
+        <div class="form-grid">
+          <div class="form-field"><label>Full Name *</label><input id="lf-name" placeholder="Candidate name" /></div>
+          <div class="form-field"><label>Phone Number</label><input id="lf-phone" type="tel" placeholder="10-digit mobile" /></div>
+          <div class="form-field"><label>Email ID</label><input id="lf-email" type="email" placeholder="candidate@email.com" /></div>
+          <div class="form-field"><label>Current Company</label><input id="lf-current-company" placeholder="Where they work now" /></div>
+          <div class="form-field"><label>Current CTC (₹)</label><input id="lf-current-ctc" type="number" min="0" placeholder="e.g. 800000" /></div>
+          <div class="form-field"><label>Expected CTC (₹)</label><input id="lf-expected-ctc" type="number" min="0" placeholder="e.g. 1200000" /></div>
+          <div class="form-field"><label>Total Experience</label><select id="lf-experience"></select></div>
+          <div class="form-field"><label>Designation</label><select id="lf-designation"></select></div>
+          <div class="form-field"><label>Profile / Function</label><select id="lf-profile"></select></div>
+          <div class="form-field"><label>Location</label><select id="lf-location"></select></div>
+          <div class="form-field"><label>Willing to Relocate?</label><select id="lf-relocate"></select></div>
+          <div class="form-field"><label>Remote Preference?</label><select id="lf-remote"></select></div>
+          <div class="form-field"><label>Platform</label><select id="lf-platform"></select></div>
+          <div class="form-field"><label>Candidate Status</label><select id="lf-stage"></select></div>
+          <div class="form-field"><label>Follow-up Date</label><input id="lf-followup" type="date" /></div>
+          <div class="form-field full"><label>Notes</label><textarea id="lf-notes" rows="3" placeholder="Any additional notes…"></textarea></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-ghost" onclick="closeModal('add-lead-modal')">Cancel</button>
+        <button class="btn-primary" onclick="saveLead()">Save Candidate</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Lead Detail Side Panel -->
+  <div class="side-panel-overlay" id="lead-detail-overlay" onclick="overlayClose(event,this)" style="display:none">
+    <div class="side-panel" id="lead-detail-panel"></div>
+  </div>
+
+  <!-- Add Task (admin only) -->
+  <div class="modal-overlay" id="add-task-modal" onclick="overlayClose(event,this)" style="display:none">
+    <div class="modal modal-lg">
+      <div class="modal-header">
+        <h3 id="task-modal-title">New Task</h3>
+        <button class="modal-close" onclick="closeModal('add-task-modal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="edit-task-id" />
+        <div class="form-grid">
+          <div class="form-field full"><label>Task Title *</label><input id="ta-title" placeholder="What needs to be done?" /></div>
+          <div class="form-field full"><label>Notes / Description</label><textarea id="ta-notes" rows="2" placeholder="Additional details…"></textarea></div>
+          <div class="form-field"><label>Due Date</label><input id="ta-due" type="date" /></div>
+          <div class="form-field"><label>Priority</label>
+            <select id="ta-priority">
+              <option>Low</option><option selected>Medium</option><option>High</option><option>Urgent</option>
+            </select>
+          </div>
+          <div class="form-field full"><label>Linked Candidate</label><select id="ta-lead"><option value="">— No candidate —</option></select></div>
+          <div class="form-field full">
+            <label>Assign to (select one or more)</label>
+            <div id="ta-assignees-list" style="padding:8px;border:1px solid var(--border-strong);border-radius:var(--radius-sm);background:var(--surface-2);max-height:200px;overflow-y:auto"></div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-ghost" onclick="closeModal('add-task-modal')">Cancel</button>
+        <button class="btn-primary" onclick="saveTask()">Save Task</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Reminder -->
+  <div class="modal-overlay" id="add-reminder-modal" onclick="overlayClose(event,this)" style="display:none">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h3 id="reminder-modal-title">Add Reminder</h3>
+        <button class="modal-close" onclick="closeModal('add-reminder-modal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="edit-reminder-id" />
+        <div class="form-grid">
+          <div class="form-field full"><label>Title *</label><input id="rf-title" placeholder="Follow up with…" /></div>
+          <div class="form-field full"><label>Linked Candidate</label><select id="rf-lead"><option value="">— none —</option></select></div>
+          <div class="form-field full"><label>Assigned to</label><select id="rf-assigned"><option value=""></option></select></div>
+          <div class="form-field"><label>Date *</label><input id="rf-date" type="date" /></div>
+          <div class="form-field"><label>Time</label><input id="rf-time" type="time" value="10:00" /></div>
+          <div class="form-field full"><label>Notes</label><textarea id="rf-notes" rows="2"></textarea></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-ghost" onclick="closeModal('add-reminder-modal')">Cancel</button>
+        <button class="btn-primary" onclick="saveReminder()">Save Reminder</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reminder Toast -->
+  <div class="reminder-toast" id="reminder-toast" style="display:none">
+    <div class="toast-icon">🔔</div>
+    <div class="toast-body">
+      <div class="toast-title" id="toast-title">Reminder</div>
+      <div class="toast-sub" id="toast-sub"></div>
+    </div>
+    <div class="toast-actions">
+      <button onclick="snoozeReminder()">Snooze 1h</button>
+      <button class="done" onclick="doneReminderToast()">Done</button>
+    </div>
+    <button class="toast-close" onclick="closeToast()">✕</button>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="app.js" type="module"></script>
+</body>
+</html>
