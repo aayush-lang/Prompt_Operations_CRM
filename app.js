@@ -1104,7 +1104,7 @@ function exportCSV() {
   const csv = [headers.join(','), ...rows].join('\n');
   const a = document.createElement('a');
   a.href = 'data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
-  a.download = 'riddler_recruit_'+new Date().toISOString().split('T')[0]+'.csv';
+  a.download = 'prompt_recruit_'+new Date().toISOString().split('T')[0]+'.csv';
   a.click();
 }
 
