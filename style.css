@@ -314,3 +314,12 @@ body.is-admin .admin-only { display: revert; }
   #main-nav { display: none; }
   .metrics-row { grid-template-columns: 1fr 1fr; }
 }
+
+
+
+/* ── NEW JOININGS ── */
+.joining-month-group { margin-bottom: 1.5rem; }
+.joining-month-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: var(--purple-light); border-radius: var(--radius) var(--radius) 0 0; border: 1px solid var(--border); border-bottom: none; }
+.joining-month-label { font-size: 13px; font-weight: 700; color: var(--purple); }
+.joining-month-count { font-size: 12px; color: var(--purple); background: white; padding: 2px 10px; border-radius: 12px; font-weight: 600; }
+.joining-month-group .data-table { border-radius: 0 0 var(--radius) var(--radius); }
