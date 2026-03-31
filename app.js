@@ -1282,3 +1282,4 @@ window.renderJoinings=renderJoinings; window.exportJoiningsCSV=exportJoiningsCSV
   const { data: { session } } = await db.auth.getSession();
   if (session?.user) { await initApp(session.user); }
 })();
+
