@@ -53,12 +53,13 @@
           <button class="nav-btn" data-view="pipeline">Pipeline</button>
           <button class="nav-btn" data-view="tasks">Tasks</button>
           <button class="nav-btn" data-view="reminders">Reminders <span class="nav-badge" id="reminder-count" style="display:none">0</span></button>
+          <button class="nav-btn" data-view="joinings">Joinings</button>
           <button class="nav-btn admin-only" data-view="settings">Settings</button>
         </nav>
       </div>
       <div class="topbar-right">
         <div class="user-chip">
-          <div class="user-avatar" id="user-avatar">AM</div>
+          <div class="user-avatar" id="user-avatar">AA</div>
           <span id="user-name">User</span>
           <button class="logout-btn" onclick="handleLogout()" title="Sign out">↩</button>
         </div>
@@ -96,8 +97,6 @@
             <button class="btn-primary" onclick="openAddLead()">+ Add Candidate</button>
           </div>
         </div>
-
-        <!-- FILTERS -->
         <div class="filter-bar">
           <input class="search-input" type="search" id="search-q" placeholder="Search name, company, email, phone…" oninput="debounceFilter()" />
           <select id="f-stage" class="filter-sel" onchange="applyFilters()"><option value="">All stages</option></select>
@@ -118,7 +117,6 @@
             – <input type="date" id="f-date-to" class="filter-input-sm" onchange="applyFilters()">
           </div>
         </div>
-
         <div class="table-container">
           <table class="data-table">
             <thead>
@@ -154,7 +152,7 @@
         </div>
       </section>
 
-      <!-- PIPELINE BOARD -->
+      <!-- PIPELINE -->
       <section class="view" id="view-pipeline">
         <div class="view-header">
           <h2 class="view-title">Pipeline Board</h2>
@@ -163,13 +161,13 @@
         <div class="kanban-board" id="kanban-board"></div>
       </section>
 
-      <!-- TASKS (Admin assigns tasks to associates) -->
+      <!-- TASKS -->
       <section class="view" id="view-tasks">
         <div class="view-header">
           <h2 class="view-title">Tasks</h2>
-          <button class="btn-primary admin-only" onclick="openAddTask()">+ New Task</button>
+          <button class="btn-primary" onclick="openAddTask()">+ New Task</button>
         </div>
-        <div style="display:flex;gap:8px;margin-bottom:1.25rem;align-items:center">
+        <div style="display:flex;gap:8px;margin-bottom:1.25rem">
           <select id="task-filter" class="filter-sel" onchange="renderTasks()">
             <option value="open">Open tasks</option>
             <option value="done">Completed</option>
@@ -194,7 +192,23 @@
         <div id="reminders-list" class="reminders-list"></div>
       </section>
 
-      <!-- SETTINGS (admin only) -->
+      <!-- JOININGS -->
+      <section class="view" id="view-joinings">
+        <div class="view-header">
+          <div>
+            <h2 class="view-title">Joinings</h2>
+            <p class="view-sub" id="joinings-total"></p>
+          </div>
+          <button class="btn-secondary admin-only" onclick="exportJoiningsCSV()">↓ Export CSV</button>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:1.25rem;align-items:center;flex-wrap:wrap">
+          <select id="joining-month" class="filter-sel" onchange="renderJoinings()"></select>
+          <select id="joining-year" class="filter-sel" onchange="renderJoinings()"></select>
+        </div>
+        <div id="joinings-list"></div>
+      </section>
+
+      <!-- SETTINGS -->
       <section class="view" id="view-settings">
         <div class="view-header"><h2 class="view-title">Settings</h2></div>
         <div class="settings-grid">
@@ -209,7 +223,7 @@
           <div class="settings-card">
             <div class="settings-card-title">About</div>
             <p style="font-size:13px;color:var(--text-2);line-height:1.6">Prompt Recruit is an internal recruitment operations CRM for Prompt Consultants. Associates coordinate with candidates; admins manage tasks and assignments.</p>
-            <p style="font-size:12px;color:var(--text-3);margin-top:12px">Role-based access: Admins see all candidates. Associates see only their assigned candidates.</p>
+            <p style="font-size:12px;color:var(--text-3);margin-top:12px">Admins see all candidates. Associates see only their assigned candidates.</p>
           </div>
         </div>
       </section>
@@ -228,21 +242,23 @@
       </div>
       <div class="modal-body">
         <input type="hidden" id="edit-lead-id" />
+        <p style="font-size:12px;color:var(--text-3);margin-bottom:12px">Fields marked <span style="color:var(--red)">*</span> are required</p>
         <div class="form-grid">
-          <div class="form-field"><label>Full Name *</label><input id="lf-name" placeholder="Candidate name" /></div>
-          <div class="form-field"><label>Phone Number</label><input id="lf-phone" type="tel" placeholder="10-digit mobile" /></div>
-          <div class="form-field"><label>Email ID</label><input id="lf-email" type="email" placeholder="candidate@email.com" /></div>
+          <div class="form-field"><label>Full Name <span style="color:var(--red)">*</span></label><input id="lf-name" placeholder="Candidate name" /></div>
+          <div class="form-field"><label>Phone Number <span style="color:var(--red)">*</span></label><input id="lf-phone" type="tel" placeholder="10-digit mobile" /></div>
+          <div class="form-field"><label>Email ID <span style="color:var(--red)">*</span></label><input id="lf-email" type="email" placeholder="candidate@email.com" /></div>
           <div class="form-field"><label>Current Company</label><input id="lf-current-company" placeholder="Where they work now" /></div>
-          <div class="form-field"><label>Current CTC (₹)</label><input id="lf-current-ctc" type="number" min="0" placeholder="e.g. 800000" /></div>
+          <div class="form-field"><label>Current Package (₹) <span style="color:var(--red)">*</span></label><input id="lf-current-ctc" type="number" min="0" placeholder="e.g. 800000" /></div>
           <div class="form-field"><label>Expected CTC (₹)</label><input id="lf-expected-ctc" type="number" min="0" placeholder="e.g. 1200000" /></div>
-          <div class="form-field"><label>Total Experience</label><select id="lf-experience"></select></div>
-          <div class="form-field"><label>Designation</label><select id="lf-designation"></select></div>
+          <div class="form-field"><label>Candidate Joining Salary (₹)</label><input id="lf-joining-salary" type="number" min="0" placeholder="Final joining package" /></div>
+          <div class="form-field"><label>Total Experience <span style="color:var(--red)">*</span></label><select id="lf-experience"></select></div>
+          <div class="form-field"><label>Designation <span style="color:var(--red)">*</span></label><select id="lf-designation"></select></div>
           <div class="form-field"><label>Profile / Function</label><select id="lf-profile"></select></div>
-          <div class="form-field"><label>Location</label><select id="lf-location"></select></div>
+          <div class="form-field"><label>Location <span style="color:var(--red)">*</span></label><select id="lf-location"></select></div>
           <div class="form-field"><label>Willing to Relocate?</label><select id="lf-relocate"></select></div>
           <div class="form-field"><label>Remote Preference?</label><select id="lf-remote"></select></div>
           <div class="form-field"><label>Platform</label><select id="lf-platform"></select></div>
-          <div class="form-field"><label>Candidate Status</label><select id="lf-stage"></select></div>
+          <div class="form-field"><label>Candidate Status <span style="color:var(--red)">*</span></label><select id="lf-stage"></select></div>
           <div class="form-field"><label>Follow-up Date</label><input id="lf-followup" type="date" /></div>
           <div class="form-field full"><label>Notes</label><textarea id="lf-notes" rows="3" placeholder="Any additional notes…"></textarea></div>
         </div>
@@ -259,7 +275,7 @@
     <div class="side-panel" id="lead-detail-panel"></div>
   </div>
 
-  <!-- Add Task (admin only) -->
+  <!-- Add Task -->
   <div class="modal-overlay" id="add-task-modal" onclick="overlayClose(event,this)" style="display:none">
     <div class="modal modal-lg">
       <div class="modal-header">
@@ -273,9 +289,7 @@
           <div class="form-field full"><label>Notes / Description</label><textarea id="ta-notes" rows="2" placeholder="Additional details…"></textarea></div>
           <div class="form-field"><label>Due Date</label><input id="ta-due" type="date" /></div>
           <div class="form-field"><label>Priority</label>
-            <select id="ta-priority">
-              <option>Low</option><option selected>Medium</option><option>High</option><option>Urgent</option>
-            </select>
+            <select id="ta-priority"><option>Low</option><option selected>Medium</option><option>High</option><option>Urgent</option></select>
           </div>
           <div class="form-field full"><label>Linked Candidate</label><select id="ta-lead"><option value="">— No candidate —</option></select></div>
           <div class="form-field full">
@@ -303,7 +317,7 @@
         <div class="form-grid">
           <div class="form-field full"><label>Title *</label><input id="rf-title" placeholder="Follow up with…" /></div>
           <div class="form-field full"><label>Linked Candidate</label><select id="rf-lead"><option value="">— none —</option></select></div>
-          <div class="form-field full"><label>Assigned to</label><select id="rf-assigned"><option value=""></option></select></div>
+          <div class="form-field full"><label>Assigned to</label><select id="rf-assigned"></select></div>
           <div class="form-field"><label>Date *</label><input id="rf-date" type="date" /></div>
           <div class="form-field"><label>Time</label><input id="rf-time" type="time" value="10:00" /></div>
           <div class="form-field full"><label>Notes</label><textarea id="rf-notes" rows="2"></textarea></div>
