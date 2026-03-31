@@ -1,4 +1,4 @@
-import { SUPABASE_URL, SUPABASE_ANON_KEY, RESEND_API_KEY, FROM_EMAIL } from './supabase.js';
+import { SUPABASE_URL, SUPABASE_ANON_KEY, FROM_EMAIL } from './supabase.js';
 
 const { createClient } = supabase;
 const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
@@ -7,16 +7,17 @@ const db = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 
 // ── CANDIDATE STAGES ──
 const STAGES = [
-  'Interested','Not Interested','Forwarded to Client',
+  'New Candidate','Interested','Not Interested','Forwarded to Client',
   'Selected Round 1','Selected Round 2','Selected Round 3',
   'Joining Date Given','Joined','Face to Face Round',
   'Profile Not Match','DNP','Follow Up Later'
 ];
 const STAGE_COLORS = {
-  'Interested':'#10B981','Not Interested':'#EF4444','Forwarded to Client':'#3B82F6',
-  'Selected Round 1':'#8B5CF6','Selected Round 2':'#7C3AED','Selected Round 3':'#6D28D9',
+  'New Candidate':'#64748B','Interested':'#10B981','Not Interested':'#EF4444',
+  'Forwarded to Client':'#3B82F6','Selected Round 1':'#8B5CF6',
+  'Selected Round 2':'#7C3AED','Selected Round 3':'#6D28D9',
   'Joining Date Given':'#F59E0B','Joined':'#22C55E','Face to Face Round':'#06B6D4',
-  'Profile Not Match':'#F97316','DNP':'#DC2626','Follow Up Later':'#64748B'
+  'Profile Not Match':'#F97316','DNP':'#DC2626','Follow Up Later':'#94A3B8'
 };
 
 const EXPERIENCE_OPTIONS = [
@@ -57,6 +58,7 @@ let state = {
   editLeadId:null, editReminderId:null, editTaskId:null,
   activeView:'dashboard', filterDebounce:null,
   dashPeriod:'all', dashCustomStart:'', dashCustomEnd:'', dashAssociate:'',
+  joiningMonth: '', joiningYear: new Date().getFullYear(),
 };
 
 // ── AUTH ──
@@ -96,16 +98,11 @@ async function initApp(user) {
   document.getElementById('auth-screen').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
 
-  // Show/hide admin-only elements
-  if (state.isAdmin) {
-    document.body.classList.add('is-admin');
-  } else {
-    document.body.classList.remove('is-admin');
-    // Hide Tasks nav for now; tasks is admin-assign tool
-  }
+  if (state.isAdmin) document.body.classList.add('is-admin');
+  else document.body.classList.remove('is-admin');
 
   await Promise.all([loadProfiles(), loadLeads(), loadReminders(), loadTasks(), loadActivities()]);
-  renderDashboard(); renderLeads(); renderReminders(); renderTasks();
+  renderDashboard(); renderLeads(); renderReminders(); renderTasks(); renderJoinings();
   populateSelects();
 
   document.querySelectorAll('.nav-btn').forEach(btn => {
@@ -120,7 +117,7 @@ async function initApp(user) {
   setInterval(checkReminderPopups, 60000);
 
   db.channel('recruit-changes')
-    .on('postgres_changes', { event:'*', schema:'public', table:'leads' }, () => loadLeads().then(() => { renderLeads(); renderDashboard(); }))
+    .on('postgres_changes', { event:'*', schema:'public', table:'leads' }, () => loadLeads().then(() => { renderLeads(); renderDashboard(); renderJoinings(); }))
     .on('postgres_changes', { event:'*', schema:'public', table:'reminders' }, () => loadReminders().then(renderReminders))
     .on('postgres_changes', { event:'*', schema:'public', table:'tasks' }, () => loadTasks().then(renderTasks))
     .on('postgres_changes', { event:'*', schema:'public', table:'activities' }, () => loadActivities().then(() => renderDashboard()))
@@ -138,18 +135,11 @@ async function loadLeads() {
   let query = db.from('leads')
     .select('*, assigned_profiles:lead_assignees(profile:profiles(id,name,avatar_initials))')
     .order(state.sortCol, { ascending: state.sortDir === 'asc' });
-
-  // Associates only see leads they are assigned to
-  if (!state.isAdmin) {
-    // We'll filter client-side after fetch since junction table filtering is complex
-  }
-
   const { data, error } = await query;
   if (!error && data) {
     if (state.isAdmin) {
       state.leads = data;
     } else {
-      // Filter: only leads where current user is in lead_assignees
       state.leads = data.filter(l =>
         l.assigned_profiles && l.assigned_profiles.some(ap => ap.profile?.id === state.user.id)
       );
@@ -160,25 +150,22 @@ async function loadLeads() {
 
 async function loadReminders() {
   let query = db.from('reminders')
-    .select('*, lead:leads(name,company), assignee:profiles!reminders_assigned_to_fkey(name)')
+    .select('*, lead:leads(name,current_company), assignee:profiles!reminders_assigned_to_fkey(name)')
     .order('due_date', { ascending: true })
     .order('due_time', { ascending: true });
-  if (!state.isAdmin) {
-    query = query.eq('assigned_to', state.user.id);
-  }
+  if (!state.isAdmin) query = query.or(`assigned_to.eq.${state.user.id},created_by.eq.${state.user.id}`);
   const { data } = await query;
   if (data) { state.reminders = data; updateReminderBadge(); }
 }
 
 async function loadTasks() {
   const { data, error } = await db.from('tasks')
-    .select('*, assignees:task_assignees(profile:profiles(id,name,avatar_initials)), lead:leads(name,company), creator:profiles!tasks_created_by_fkey(name)')
+    .select('*, assignees:task_assignees(profile:profiles(id,name,avatar_initials)), lead:leads(name,current_company), creator:profiles!tasks_created_by_fkey(name)')
     .order('created_at', { ascending: false });
   if (!error && data) {
     if (state.isAdmin) {
       state.tasks = data;
     } else {
-      // Associates see only tasks assigned to them
       state.tasks = data.filter(t =>
         t.assignees && t.assignees.some(a => a.profile?.id === state.user.id)
       );
@@ -278,18 +265,14 @@ function renderBarChart(containerId, buckets, counts, color) {
 function renderDashboard() {
   const period = state.dashPeriod;
   let allLeads = state.leads;
-
-  // Filter by associate if admin selected one
   if (state.isAdmin && state.dashAssociate) {
     allLeads = allLeads.filter(l =>
       l.assigned_profiles && l.assigned_profiles.some(ap => ap.profile?.id === state.dashAssociate)
     );
   }
-
   const filteredLeads = filterByPeriod(allLeads, 'created_at', period, state.dashCustomStart, state.dashCustomEnd);
   const filteredActivities = filterByPeriod(state.activities||[], 'created_at', period, state.dashCustomStart, state.dashCustomEnd);
   const followedUpLeadIds = new Set(filteredActivities.map(a => a.lead_id).filter(Boolean));
-
   const won = filteredLeads.filter(l => l.stage === 'Joined');
   const periodLabels = { today:'Today', week:'This week', month:'This month', quarter:'This quarter', all:'All time', custom:'Custom range' };
 
@@ -299,7 +282,6 @@ function renderDashboard() {
     +'<div class="metric-card"><div class="metric-label">Joined</div><div class="metric-value green">'+won.length+'</div><div class="metric-sub">Successfully placed</div></div>'
     +'<div class="metric-card"><div class="metric-label">Forwarded to Client</div><div class="metric-value amber">'+filteredLeads.filter(l=>l.stage==='Forwarded to Client').length+'</div><div class="metric-sub">Profiles submitted</div></div>';
 
-  // Period tabs
   const filterEl = document.getElementById('dash-period-filter');
   if (filterEl) {
     let html = '<div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">';
@@ -323,19 +305,16 @@ function renderDashboard() {
     filterEl.innerHTML = html;
   }
 
-  // Stage bars
   const maxS = Math.max(...STAGES.map(s => filteredLeads.filter(l => l.stage===s).length), 1);
   document.getElementById('stage-bars').innerHTML = STAGES.map(s => {
     const c = filteredLeads.filter(l => l.stage===s).length;
-    return '<div class="stage-bar-row"><span class="stage-bar-label" style="width:140px">'+s+'</span><div class="stage-bar-track"><div class="stage-bar-fill" style="width:'+Math.round(c/maxS*100)+'%;background:'+STAGE_COLORS[s]+'"></div></div><span class="stage-bar-count">'+c+'</span></div>';
+    return '<div class="stage-bar-row"><span class="stage-bar-label">'+s+'</span><div class="stage-bar-track"><div class="stage-bar-fill" style="width:'+Math.round(c/maxS*100)+'%;background:'+STAGE_COLORS[s]+'"></div></div><span class="stage-bar-count">'+c+'</span></div>';
   }).join('');
 
-  // Profile distribution
   const profMap = {};
   filteredLeads.forEach(l => { if (l.profile) { profMap[l.profile] = (profMap[l.profile]||0)+1; } });
   document.getElementById('source-chart').innerHTML = Object.entries(profMap).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([s,c]) => '<div class="source-row"><span>'+s+'</span><span class="source-pill">'+c+'</span></div>').join('') || '<div class="empty-state">No profile data yet</div>';
 
-  // Charts
   const buckets = getChartBuckets(period === 'custom' ? 'all' : period);
   const createdCounts = {}; buckets.forEach(b => { createdCounts[b.key]=0; });
   filteredLeads.forEach(l => { const key = getItemKey(l.created_at, period==='custom'?'all':period); if (key in createdCounts) createdCounts[key]++; });
@@ -347,14 +326,12 @@ function renderDashboard() {
   buckets.forEach(b => { followupCounts[b.key] = bucketLeadSets[b.key].size; });
   renderBarChart('leads-followup-chart-inner', buckets, followupCounts, '#10B981');
 
-  // Follow-ups today
   const today = new Date().toISOString().split('T')[0];
   const due = allLeads.filter(l => l.followup_date === today);
   document.getElementById('followups-today').innerHTML = due.length ? due.slice(0,5).map(l =>
     '<div class="followup-row"><div><div class="followup-name">'+esc(l.name)+'</div><div class="followup-company">'+esc(l.current_company||'')+'</div></div><button class="btn-sm" onclick="openLeadDetail(\''+l.id+'\')">View</button></div>'
   ).join('') : '<div class="empty-state"><div class="empty-state-icon">✓</div>No follow-ups today</div>';
 
-  // Team performance (admin only)
   const perfEl = document.getElementById('team-perf');
   if (perfEl) {
     if (state.isAdmin) {
@@ -377,7 +354,7 @@ function renderDashboard() {
         +'</div></div>'
       ).join('') || '<div class="empty-state">Assign candidates to see stats</div>';
     } else {
-      perfEl.closest('.dash-card').style.display = 'none';
+      perfEl.closest('.dash-card')?.style && (perfEl.closest('.dash-card').style.display = 'none');
     }
   }
 }
@@ -385,76 +362,154 @@ function renderDashboard() {
 function setDashPeriod(period) { state.dashPeriod = period; renderDashboard(); }
 function setDashCustomRange() {
   const s = document.getElementById('dash-custom-start'); const e = document.getElementById('dash-custom-end');
-  if (s) state.dashCustomStart = s.value;
-  if (e) state.dashCustomEnd = e.value;
+  if (s) state.dashCustomStart = s.value; if (e) state.dashCustomEnd = e.value;
   renderDashboard();
 }
 function setDashAssociate(val) { state.dashAssociate = val; renderDashboard(); }
 
+// ── JOININGS TAB ──
+function renderJoinings() {
+  const el = document.getElementById('joinings-list');
+  if (!el) return;
+
+  const joined = state.leads.filter(l => l.stage === 'Joined');
+
+  // Build month/year filter options
+  const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const now = new Date();
+
+  // Month selector
+  const monthSel = document.getElementById('joining-month');
+  const yearSel = document.getElementById('joining-year');
+  if (monthSel && !monthSel.innerHTML) {
+    monthSel.innerHTML = '<option value="">All months</option>' + monthNames.map((m,i) => '<option value="'+(i+1)+'" '+(i+1===now.getMonth()+1?'selected':'')+'>'+m+'</option>').join('');
+    state.joiningMonth = String(now.getMonth()+1);
+  }
+  if (yearSel && !yearSel.innerHTML) {
+    const years = [];
+    for (let y = now.getFullYear(); y >= now.getFullYear()-3; y--) years.push(y);
+    yearSel.innerHTML = years.map(y => '<option value="'+y+'" '+(y===state.joiningYear?'selected':'')+'>'+y+'</option>').join('');
+  }
+
+  const selMonth = +(document.getElementById('joining-month')?.value || state.joiningMonth || 0);
+  const selYear = +(document.getElementById('joining-year')?.value || state.joiningYear);
+
+  let filtered = joined;
+  if (selMonth && selYear) {
+    filtered = joined.filter(l => {
+      const d = new Date(l.updated_at || l.created_at);
+      return d.getMonth()+1 === selMonth && d.getFullYear() === selYear;
+    });
+  }
+
+  // Group by associate
+  const byAssoc = {};
+  filtered.forEach(l => {
+    const assignees = l.assigned_profiles ? l.assigned_profiles.map(ap => ap.profile).filter(Boolean) : [];
+    if (assignees.length) {
+      assignees.forEach(p => {
+        if (!byAssoc[p.name]) byAssoc[p.name] = [];
+        byAssoc[p.name].push(l);
+      });
+    } else {
+      if (!byAssoc['Unassigned']) byAssoc['Unassigned'] = [];
+      byAssoc['Unassigned'].push(l);
+    }
+  });
+
+  const totalEl = document.getElementById('joinings-total');
+  if (totalEl) totalEl.textContent = filtered.length + ' joined';
+
+  if (!filtered.length) {
+    el.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📋</div><div>No joinings for this period</div></div>';
+    return;
+  }
+
+  el.innerHTML = Object.entries(byAssoc).map(([assoc, leads]) =>
+    '<div class="joining-group">'
+    +'<div class="joining-group-header"><span class="joining-assoc-name">'+esc(assoc)+'</span><span class="joining-assoc-count">'+leads.length+' joined</span></div>'
+    +'<table class="data-table" style="margin-bottom:0">'
+    +'<thead><tr><th>Name</th><th>Company</th><th>Designation</th><th>Profile</th><th>Joining Salary</th><th>Location</th><th>Date</th></tr></thead>'
+    +'<tbody>'+leads.map(l =>
+      '<tr>'
+      +'<td><div class="lead-name">'+esc(l.name)+'</div></td>'
+      +'<td style="font-size:12px;color:var(--text-2)">'+esc(l.current_company||'—')+'</td>'
+      +'<td style="font-size:12px">'+esc(l.designation||'—')+'</td>'
+      +'<td style="font-size:12px">'+esc(l.profile||'—')+'</td>'
+      +'<td style="font-size:12px;font-family:\'JetBrains Mono\',monospace">'+(l.joining_salary?'₹'+formatINR(+l.joining_salary):'—')+'</td>'
+      +'<td style="font-size:12px;color:var(--text-3)">'+esc(l.location||'—')+'</td>'
+      +'<td style="font-size:12px;color:var(--text-3)">'+(l.updated_at?formatDate(l.updated_at.split('T')[0]):'—')+'</td>'
+      +'</tr>'
+    ).join('')+'</tbody></table></div>'
+  ).join('');
+}
+
+function exportJoiningsCSV() {
+  if (!state.isAdmin) { alert('Only admins can export this report.'); return; }
+  const joined = state.leads.filter(l => l.stage === 'Joined');
+  const selMonth = +(document.getElementById('joining-month')?.value || 0);
+  const selYear = +(document.getElementById('joining-year')?.value || state.joiningYear);
+  let filtered = joined;
+  if (selMonth && selYear) {
+    filtered = joined.filter(l => {
+      const d = new Date(l.updated_at || l.created_at);
+      return d.getMonth()+1 === selMonth && d.getFullYear() === selYear;
+    });
+  }
+  const headers = ['Name','Phone','Email','Company','Designation','Profile','Location','Joining Salary','Associate','Joined Date'];
+  const rows = filtered.map(l => {
+    const assignees = l.assigned_profiles ? l.assigned_profiles.map(ap => ap.profile?.name).filter(Boolean).join('; ') : '';
+    return [l.name,l.phone,l.email,l.current_company,l.designation,l.profile,l.location,l.joining_salary||'',assignees,l.updated_at?.split('T')[0]||'']
+      .map(v => '"'+(v||'').toString().replace(/"/g,'""')+'"').join(',');
+  });
+  const csv = [headers.join(','), ...rows].join('\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,'+encodeURIComponent(csv);
+  a.download = 'joinings_'+selYear+(selMonth?'_'+String(selMonth).padStart(2,'0'):'')+'.csv';
+  a.click();
+}
+
 // ── SELECTS ──
 function populateSelects() {
-  // Filter dropdowns
   const fstage = document.getElementById('f-stage');
   if (fstage) fstage.innerHTML = '<option value="">All stages</option>' + STAGES.map(s => '<option>'+s+'</option>').join('');
-
   const fprofile = document.getElementById('f-profile');
   if (fprofile) fprofile.innerHTML = '<option value="">All profiles</option>' + PROFILE_OPTIONS.map(s => '<option>'+s+'</option>').join('');
-
   const floc = document.getElementById('f-location');
   if (floc) floc.innerHTML = '<option value="">All locations</option>' + INDIA_CITIES.map(c => '<option>'+c+'</option>').join('');
-
   const freloc = document.getElementById('f-relocation');
   if (freloc) freloc.innerHTML = '<option value="">Any relocation</option><option value="Yes">Willing to relocate</option><option value="No">Not willing</option>';
 
-  // Lead form dropdowns
-  ['lf-experience'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.innerHTML = '<option value=""></option>' + EXPERIENCE_OPTIONS.map(o => '<option>'+o+'</option>').join('');
-  });
-  ['lf-designation'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.innerHTML = '<option value=""></option>' + DESIGNATION_OPTIONS.map(o => '<option>'+o+'</option>').join('');
-  });
-  ['lf-profile'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.innerHTML = '<option value=""></option>' + PROFILE_OPTIONS.map(o => '<option>'+o+'</option>').join('');
-  });
-  ['lf-location'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.innerHTML = '<option value=""></option>' + INDIA_CITIES.map(c => '<option>'+c+'</option>').join('');
-  });
-  ['lf-platform'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.innerHTML = '<option value=""></option>' + PLATFORM_OPTIONS.map(o => '<option>'+o+'</option>').join('');
-  });
+  const expEl = document.getElementById('lf-experience');
+  if (expEl) expEl.innerHTML = '<option value=""></option>' + EXPERIENCE_OPTIONS.map(o => '<option>'+o+'</option>').join('');
+  const desEl = document.getElementById('lf-designation');
+  if (desEl) desEl.innerHTML = '<option value=""></option>' + DESIGNATION_OPTIONS.map(o => '<option>'+o+'</option>').join('');
+  const profEl = document.getElementById('lf-profile');
+  if (profEl) profEl.innerHTML = '<option value=""></option>' + PROFILE_OPTIONS.map(o => '<option>'+o+'</option>').join('');
+  const locEl = document.getElementById('lf-location');
+  if (locEl) locEl.innerHTML = '<option value=""></option>' + INDIA_CITIES.map(c => '<option>'+c+'</option>').join('');
+  const platEl = document.getElementById('lf-platform');
+  if (platEl) platEl.innerHTML = '<option value=""></option>' + PLATFORM_OPTIONS.map(o => '<option>'+o+'</option>').join('');
   ['lf-relocate','lf-remote'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.innerHTML = '<option value=""></option><option>Yes</option><option>No</option>';
   });
   const lfstage = document.getElementById('lf-stage');
   if (lfstage) lfstage.innerHTML = STAGES.map(s => '<option>'+s+'</option>').join('');
-
   const bstage = document.getElementById('bulk-stage');
   if (bstage) bstage.innerHTML = '<option value="">Move to stage…</option>' + STAGES.map(s => '<option>'+s+'</option>').join('');
 }
 
 function populateAssignedSelects() {
   const opts = state.profiles.map(p => '<option value="'+p.id+'">'+esc(p.name)+'</option>').join('');
-  // Reminder assign
   const rfAssigned = document.getElementById('rf-assigned');
   if (rfAssigned) rfAssigned.innerHTML = '<option value="">Unassigned</option>'+opts;
-  // Task assignee primary
-  const taPrimary = document.getElementById('ta-assigned');
-  if (taPrimary) taPrimary.innerHTML = '<option value="">Select assignee</option>'+opts;
-  // Team list
   const tl = document.getElementById('team-list');
   if (tl) tl.innerHTML = state.profiles.map(p =>
     '<div class="team-member-row"><div class="tm-info"><div class="tm-avatar">'+(p.avatar_initials||'?')+'</div><div><div style="font-weight:500">'+esc(p.name)+'</div><div style="font-size:11px;color:var(--text-3)">'+esc(p.email)+'</div></div></div><span class="tm-role">'+p.role+'</span></div>'
   ).join('');
-  // Bulk assign select (admin only)
   const baSelect = document.getElementById('bulk-assign-select');
   if (baSelect) baSelect.innerHTML = '<option value="">Select associate…</option>'+opts;
-  // Filter assigned
   const fAssigned = document.getElementById('f-assigned');
   if (fAssigned) fAssigned.innerHTML = '<option value="">All members</option>'+opts;
 }
@@ -468,6 +523,7 @@ function switchView(viewName, btn) {
   state.activeView = viewName;
   if (viewName === 'pipeline') renderKanban();
   if (viewName === 'tasks') renderTasks();
+  if (viewName === 'joinings') renderJoinings();
   if (viewName === 'settings') loadProfiles().then(() => populateAssignedSelects());
 }
 
@@ -531,7 +587,7 @@ function renderLeads() {
 
   const tbody = document.getElementById('leads-tbody');
   if (!slice.length) {
-    tbody.innerHTML = '<tr><td colspan="12" class="empty-row"><div class="empty-state-icon">🔍</div><div>No candidates found</div></td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" class="empty-row"><div class="empty-state-icon">🔍</div><div>No candidates found</div></td></tr>';
   } else {
     tbody.innerHTML = slice.map(l => {
       const assignees = l.assigned_profiles ? l.assigned_profiles.map(ap => ap.profile).filter(Boolean) : [];
@@ -549,7 +605,7 @@ function renderLeads() {
         +'<td><span class="stage-badge" style="background:'+stageColor+'22;color:'+stageColor+'">'+l.stage+'</span></td>'
         +'<td style="font-size:12px;color:var(--text-2)">'+esc(l.profile||'—')+'</td>'
         +'<td style="font-size:12px;color:var(--text-3)">'+esc(l.location||'—')+'</td>'
-        +'<td style="font-size:12px;font-family:\'DM Mono\',monospace">'+(l.current_ctc?'₹'+formatINR(+l.current_ctc):'—')+'</td>'
+        +'<td style="font-size:12px;font-family:\'JetBrains Mono\',monospace">'+(l.current_ctc?'₹'+formatINR(+l.current_ctc):'—')+'</td>'
         +'<td><div style="display:flex;gap:3px;flex-wrap:wrap">'+assigneeHtml+'</div></td>'
         +'<td style="font-size:12px;'+fuClass+'">'+(fu?formatDate(fu):'—')+'</td>'
         +'<td style="font-size:12px;color:var(--text-3)">'+(l.created_at?formatDate(l.created_at.split('T')[0]):'—')+'</td>'
@@ -600,12 +656,11 @@ async function bulkAssign() {
   const profileId = document.getElementById('bulk-assign-select').value;
   if (!profileId || !state.selectedLeads.size) { alert('Select an associate and at least one candidate.'); return; }
   const ids = [...state.selectedLeads];
-  // Upsert into lead_assignees for each
   const rows = ids.map(leadId => ({ lead_id: leadId, profile_id: profileId }));
   await db.from('lead_assignees').upsert(rows, { onConflict: 'lead_id,profile_id' });
   state.selectedLeads.clear();
   await loadLeads(); renderLeads();
-  alert('Assigned '+ids.length+' candidate(s) to associate.');
+  alert('Assigned '+ids.length+' candidate(s).');
 }
 
 async function bulkDelete() {
@@ -627,9 +682,9 @@ function openAddLead() {
   state.editLeadId = null;
   document.getElementById('lead-modal-title').textContent = 'Add Candidate';
   document.getElementById('edit-lead-id').value = '';
-  ['lf-name','lf-phone','lf-email','lf-current-ctc','lf-expected-ctc','lf-current-company','lf-notes','lf-followup'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
+  ['lf-name','lf-phone','lf-email','lf-current-ctc','lf-expected-ctc','lf-joining-salary','lf-current-company','lf-notes','lf-followup'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
   ['lf-experience','lf-designation','lf-profile','lf-location','lf-relocate','lf-remote','lf-platform'].forEach(id => { const el = document.getElementById(id); if (el) el.value = ''; });
-  document.getElementById('lf-stage').value = 'Interested';
+  document.getElementById('lf-stage').value = 'New Candidate';
   openModal('add-lead-modal');
 }
 
@@ -643,6 +698,7 @@ function openEditLead(id) {
   document.getElementById('lf-email').value = l.email||'';
   document.getElementById('lf-current-ctc').value = l.current_ctc||'';
   document.getElementById('lf-expected-ctc').value = l.expected_ctc||'';
+  document.getElementById('lf-joining-salary').value = l.joining_salary||'';
   document.getElementById('lf-current-company').value = l.current_company||'';
   document.getElementById('lf-experience').value = l.experience||'';
   document.getElementById('lf-designation').value = l.designation||'';
@@ -652,33 +708,51 @@ function openEditLead(id) {
   document.getElementById('lf-remote').value = l.remote_preference||'';
   document.getElementById('lf-platform').value = l.platform||'';
   document.getElementById('lf-notes').value = l.notes||'';
-  document.getElementById('lf-stage').value = l.stage||'Interested';
+  document.getElementById('lf-stage').value = l.stage||'New Candidate';
   document.getElementById('lf-followup').value = l.followup_date||'';
   openModal('add-lead-modal');
 }
 
 async function saveLead() {
   const name = document.getElementById('lf-name').value.trim();
-  if (!name) { alert('Name is required'); return; }
+  const email = document.getElementById('lf-email').value.trim();
+  const phone = document.getElementById('lf-phone').value.trim();
+  const designation = document.getElementById('lf-designation').value;
+  const location = document.getElementById('lf-location').value;
+  const current_ctc = document.getElementById('lf-current-ctc').value;
+  const experience = document.getElementById('lf-experience').value;
+  const stage = document.getElementById('lf-stage').value;
+
+  // Mandatory field validation
+  const missing = [];
+  if (!name) missing.push('Name');
+  if (!email) missing.push('Mail ID');
+  if (!phone) missing.push('Phone Number');
+  if (!designation) missing.push('Designation');
+  if (!location) missing.push('Location');
+  if (!current_ctc) missing.push('Current Package');
+  if (!experience) missing.push('Experience');
+  if (!stage) missing.push('Candidate Status');
+  if (missing.length) { alert('Please fill in required fields:\n• ' + missing.join('\n• ')); return; }
+
   const payload = {
-    name,
-    phone: document.getElementById('lf-phone').value,
-    email: document.getElementById('lf-email').value,
-    current_ctc: +document.getElementById('lf-current-ctc').value||null,
+    name, phone, email,
+    current_ctc: +current_ctc||null,
     expected_ctc: +document.getElementById('lf-expected-ctc').value||null,
+    joining_salary: +document.getElementById('lf-joining-salary').value||null,
     current_company: document.getElementById('lf-current-company').value,
-    experience: document.getElementById('lf-experience').value,
-    designation: document.getElementById('lf-designation').value,
+    experience, designation,
     profile: document.getElementById('lf-profile').value,
-    location: document.getElementById('lf-location').value,
+    location,
     willing_to_relocate: document.getElementById('lf-relocate').value,
     remote_preference: document.getElementById('lf-remote').value,
     platform: document.getElementById('lf-platform').value,
     notes: document.getElementById('lf-notes').value,
-    stage: document.getElementById('lf-stage').value,
+    stage,
     followup_date: document.getElementById('lf-followup').value||null,
     updated_at: new Date().toISOString()
   };
+
   const editId = state.editLeadId;
   if (editId) {
     const old = state.leads.find(l => l.id === editId);
@@ -693,7 +767,6 @@ async function saveLead() {
     const { data } = await db.from('leads').insert(payload).select().single();
     if (data) {
       await db.from('activities').insert({ lead_id: data.id, user_id: state.user.id, type:'created', text:'Candidate added' });
-      // Auto-assign to self if associate
       if (!state.isAdmin) {
         await db.from('lead_assignees').insert({ lead_id: data.id, profile_id: state.user.id });
       }
@@ -701,7 +774,7 @@ async function saveLead() {
   }
   closeModal('add-lead-modal');
   await loadLeads(); await loadActivities();
-  renderLeads(); renderDashboard();
+  renderLeads(); renderDashboard(); renderJoinings();
   if (state.activeView === 'pipeline') renderKanban();
 }
 
@@ -709,7 +782,7 @@ async function deleteLead(id) {
   if (!confirm('Delete this candidate?')) return;
   await db.from('leads').delete().eq('id', id);
   document.getElementById('lead-detail-overlay').style.display = 'none';
-  await loadLeads(); renderLeads(); renderDashboard();
+  await loadLeads(); renderLeads(); renderDashboard(); renderJoinings();
   if (state.activeView === 'pipeline') renderKanban();
 }
 
@@ -728,12 +801,11 @@ async function openLeadDetail(id) {
     '<button class="stage-switch-btn '+(l.stage===s?'active':'')+'" onclick="changeStageFromPanel(\''+l.id+'\',\''+s+'\')" style="'+(l.stage===s?'background:'+STAGE_COLORS[s]+';border-color:'+STAGE_COLORS[s]+';color:white':'')+'">'+s+'</button>'
   ).join('');
 
-  // Assign section (admin only)
   const profileOpts = state.profiles.map(p => '<option value="'+p.id+'">'+esc(p.name)+'</option>').join('');
   const assignSection = state.isAdmin ? `
     <div class="panel-section">
       <div class="panel-section-title">Assign Associates</div>
-      <div style="font-size:12px;color:var(--text-3);margin-bottom:8px">Currently assigned: ${assignees.length ? assignees.map(p=>esc(p.name)).join(', ') : 'None'}</div>
+      <div style="font-size:12px;color:var(--text-3);margin-bottom:8px">Currently: ${assignees.length ? assignees.map(p=>esc(p.name)).join(', ') : 'None'}</div>
       <div style="display:flex;gap:8px;align-items:center">
         <select id="assign-select" style="flex:1;padding:8px 10px;border:1px solid var(--border-strong);border-radius:var(--radius-sm);background:var(--surface-2);color:var(--text-1);font-size:13px;outline:none">
           <option value="">Select associate…</option>${profileOpts}
@@ -756,12 +828,12 @@ async function openLeadDetail(id) {
     +'<div class="info-field"><div class="info-label">Designation</div><div class="info-value">'+esc(l.designation||'—')+'</div></div>'
     +'<div class="info-field"><div class="info-label">Experience</div><div class="info-value">'+esc(l.experience||'—')+'</div></div>'
     +'<div class="info-field"><div class="info-label">Location</div><div class="info-value">'+esc(l.location||'—')+'</div></div>'
-    +'<div class="info-field"><div class="info-label">Current CTC</div><div class="info-value" style="font-family:\'DM Mono\',monospace">'+(l.current_ctc?'₹'+formatINR(+l.current_ctc):'—')+'</div></div>'
-    +'<div class="info-field"><div class="info-label">Expected CTC</div><div class="info-value" style="font-family:\'DM Mono\',monospace">'+(l.expected_ctc?'₹'+formatINR(+l.expected_ctc):'—')+'</div></div>'
+    +'<div class="info-field"><div class="info-label">Current CTC</div><div class="info-value" style="font-family:\'JetBrains Mono\',monospace">'+(l.current_ctc?'₹'+formatINR(+l.current_ctc):'—')+'</div></div>'
+    +'<div class="info-field"><div class="info-label">Expected CTC</div><div class="info-value" style="font-family:\'JetBrains Mono\',monospace">'+(l.expected_ctc?'₹'+formatINR(+l.expected_ctc):'—')+'</div></div>'
+    +'<div class="info-field"><div class="info-label">Joining Salary</div><div class="info-value" style="font-family:\'JetBrains Mono\',monospace">'+(l.joining_salary?'₹'+formatINR(+l.joining_salary):'—')+'</div></div>'
     +'<div class="info-field"><div class="info-label">Relocate?</div><div class="info-value">'+esc(l.willing_to_relocate||'—')+'</div></div>'
     +'<div class="info-field"><div class="info-label">Remote?</div><div class="info-value">'+esc(l.remote_preference||'—')+'</div></div>'
     +'<div class="info-field"><div class="info-label">Platform</div><div class="info-value">'+esc(l.platform||'—')+'</div></div>'
-    +'<div class="info-field"><div class="info-label">Follow-up</div><div class="info-value">'+(l.followup_date?formatDate(l.followup_date):'—')+'</div></div>'
     +'</div>'+(l.notes?'<div style="margin-top:10px;font-size:13px;color:var(--text-2);background:var(--surface-2);padding:10px;border-radius:var(--radius-sm)">'+esc(l.notes)+'</div>':'')+'</div>'
     +'<div class="panel-section"><div class="panel-section-title">Candidate Status</div><div class="stage-switcher">'+stageButtons+'</div></div>'
     + assignSection
@@ -772,8 +844,7 @@ async function openLeadDetail(id) {
 }
 
 async function assignLead(leadId) {
-  const profileId = document.getElementById('assign-select').value;
-  if (!profileId) return;
+  const profileId = document.getElementById('assign-select').value; if (!profileId) return;
   await db.from('lead_assignees').upsert({ lead_id: leadId, profile_id: profileId }, { onConflict: 'lead_id,profile_id' });
   const pName = state.profiles.find(p => p.id === profileId)?.name || 'someone';
   await db.from('activities').insert({ lead_id: leadId, user_id: state.user.id, type:'edit', text:'Assigned to '+pName });
@@ -790,7 +861,7 @@ async function changeStageFromPanel(leadId, stage) {
   await db.from('leads').update({ stage, updated_at: new Date().toISOString() }).eq('id', leadId);
   await db.from('activities').insert({ lead_id: leadId, user_id: state.user.id, type:'stage_change', text:'Stage changed from '+(old?.stage||'?')+' to '+stage });
   await loadLeads(); await loadActivities();
-  renderLeads(); renderDashboard();
+  renderLeads(); renderDashboard(); renderJoinings();
   if (state.activeView === 'pipeline') renderKanban();
   openLeadDetail(leadId);
 }
@@ -815,8 +886,7 @@ function renderKanban() {
         +'<div class="kcard-company">'+esc(l.current_company||'—')+'</div>'
         +'<div class="kcard-footer"><span class="kcard-value">'+esc(l.profile||'')+'</span><span class="kcard-service">'+esc(l.location||'')+'</span></div>'
         +'</div>'
-      ).join('')+'</div>'
-      +'</div>';
+      ).join('')+'</div></div>';
   }).join('');
 }
 
@@ -834,10 +904,10 @@ async function kanbanDrop(e, stage) {
   await db.from('leads').update({ stage, updated_at: new Date().toISOString() }).eq('id', draggedLeadId);
   await db.from('activities').insert({ lead_id: draggedLeadId, user_id: state.user.id, type:'stage_change', text:'Stage moved to '+stage+' via board' });
   draggedLeadId = null;
-  await loadLeads(); renderKanban(); renderDashboard();
+  await loadLeads(); renderKanban(); renderDashboard(); renderJoinings();
 }
 
-// ── TASKS (replaces Briefs) ──
+// ── TASKS ──
 function renderTasks() {
   const list = document.getElementById('tasks-list');
   if (!list) return;
@@ -855,12 +925,14 @@ function renderTasks() {
     const assigneeChips = assignees.map(p =>
       '<span style="background:var(--purple-light);color:var(--purple);padding:2px 8px;border-radius:10px;font-size:11px">'+esc(p.name)+'</span>'
     ).join('');
-    const dueCls = t.due_date && t.due_date < new Date().toISOString().split('T')[0] && !t.done ? 'color:var(--red)' : 'color:var(--text-3)';
+    const today = new Date().toISOString().split('T')[0];
+    const dueCls = t.due_date && t.due_date < today && !t.done ? 'color:var(--red)' : 'color:var(--text-3)';
+    const canEdit = state.isAdmin;
     return '<div class="task-card '+(t.done?'task-done':'')+'">'
       +'<div class="task-card-left">'
-      +'<input type="checkbox" '+(t.done?'checked':'')+' '+(state.isAdmin?'onchange="toggleTaskDone(\''+t.id+'\',this)"':'')+' style="margin-top:3px;cursor:pointer">'
-      +'<div><div class="task-title">'+esc(t.title)+'</div>'
-      +(t.notes?'<div class="task-notes">'+esc(t.notes)+'</div>':'')+
+      +'<input type="checkbox" '+(t.done?'checked':'')+' onchange="toggleTaskDone(\''+t.id+'\',this)" style="margin-top:3px;cursor:pointer">'
+      +'<div style="flex:1"><div class="task-title">'+esc(t.title)+'</div>'
+      +(t.notes?'<div class="task-notes">'+esc(t.notes)+'</div>':'')
       +'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;align-items:center">'
       +(t.lead?'<span style="font-size:11px;color:var(--text-3)">📋 '+esc(t.lead.name)+'</span>':'')
       +(t.due_date?'<span style="font-size:11px;'+dueCls+'">📅 '+formatDate(t.due_date)+'</span>':'')
@@ -868,13 +940,12 @@ function renderTasks() {
       +'</div>'
       +'<div style="margin-top:8px;display:flex;gap:5px;flex-wrap:wrap">'+assigneeChips+'</div>'
       +'</div></div>'
-      +(state.isAdmin?'<div class="task-card-actions"><button class="btn-sm" onclick="openEditTask(\''+t.id+'\')">Edit</button><button class="btn-danger-sm" onclick="deleteTask(\''+t.id+'\')">Delete</button></div>':'')
+      +(canEdit?'<div class="task-card-actions"><button class="btn-sm" onclick="openEditTask(\''+t.id+'\')">Edit</button><button class="btn-danger-sm" onclick="deleteTask(\''+t.id+'\')">Delete</button></div>':'')
       +'</div>';
   }).join('');
 }
 
 function openAddTask() {
-  if (!state.isAdmin) return;
   state.editTaskId = null;
   document.getElementById('task-modal-title').textContent = 'New Task';
   document.getElementById('edit-task-id').value = '';
@@ -882,17 +953,13 @@ function openAddTask() {
   document.getElementById('ta-notes').value = '';
   document.getElementById('ta-due').value = '';
   document.getElementById('ta-priority').value = 'Medium';
-  document.getElementById('ta-assigned').value = '';
-  // Render multi-assign checkboxes
   renderTaskAssigneeCheckboxes([]);
-  // Populate lead select
-  document.getElementById('ta-lead').innerHTML = '<option value="">— No lead —</option>'
+  document.getElementById('ta-lead').innerHTML = '<option value="">— No candidate —</option>'
     + state.leads.map(l => '<option value="'+l.id+'">'+esc(l.name)+(l.current_company?' — '+esc(l.current_company):'')+'</option>').join('');
   openModal('add-task-modal');
 }
 
 function openEditTask(id) {
-  if (!state.isAdmin) return;
   const t = state.tasks.find(x => x.id === id); if (!t) return;
   state.editTaskId = id;
   document.getElementById('task-modal-title').textContent = 'Edit Task';
@@ -901,7 +968,7 @@ function openEditTask(id) {
   document.getElementById('ta-notes').value = t.notes||'';
   document.getElementById('ta-due').value = t.due_date||'';
   document.getElementById('ta-priority').value = t.priority||'Medium';
-  document.getElementById('ta-lead').innerHTML = '<option value="">— No lead —</option>'
+  document.getElementById('ta-lead').innerHTML = '<option value="">— No candidate —</option>'
     + state.leads.map(l => '<option value="'+l.id+'" '+(l.id===t.lead_id?'selected':'')+'>'+esc(l.name)+(l.current_company?' — '+esc(l.current_company):'')+'</option>').join('');
   const assignedIds = t.assignees ? t.assignees.map(a => a.profile?.id).filter(Boolean) : [];
   renderTaskAssigneeCheckboxes(assignedIds);
@@ -915,13 +982,11 @@ function renderTaskAssigneeCheckboxes(selectedIds) {
     '<label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;font-size:13px">'
     +'<input type="checkbox" name="task-assignee" value="'+p.id+'" '+(selectedIds.includes(p.id)?'checked':'')+'>'
     +'<div class="tm-avatar" style="width:24px;height:24px;font-size:10px">'+(p.avatar_initials||'?')+'</div>'
-    +esc(p.name)
-    +'</label>'
+    +esc(p.name)+'</label>'
   ).join('');
 }
 
 async function saveTask() {
-  if (!state.isAdmin) return;
   const title = document.getElementById('ta-title').value.trim();
   if (!title) { alert('Task title is required'); return; }
   const payload = {
@@ -934,13 +999,11 @@ async function saveTask() {
     updated_at: new Date().toISOString()
   };
   const checkedAssignees = [...document.querySelectorAll('input[name="task-assignee"]:checked')].map(el => el.value);
-
   const editId = state.editTaskId;
   let taskId;
   if (editId) {
     await db.from('tasks').update(payload).eq('id', editId);
     taskId = editId;
-    // Replace assignees
     await db.from('task_assignees').delete().eq('task_id', taskId);
   } else {
     payload.created_by = state.user.id;
@@ -985,7 +1048,7 @@ function renderReminders() {
       +(r.notes?'<div class="rem-notes">'+esc(r.notes)+'</div>':'')
       +'<div class="rem-actions">'+(!r.done?'<button class="btn-sm" onclick="markReminderDone(\''+r.id+'\')">✓ Done</button>':'')
       +'<button class="btn-sm" onclick="openEditReminder(\''+r.id+'\')">Edit</button>'
-      +(r.lead?'<button class="btn-sm" onclick="openLeadDetail(\''+r.lead_id+'\')">View candidate</button>':'')
+      +(r.lead_id?'<button class="btn-sm" onclick="openLeadDetail(\''+r.lead_id+'\')">View candidate</button>':'')
       +'<button class="btn-danger-sm" onclick="deleteReminder(\''+r.id+'\')">Delete</button></div></div></div>';
   }).join('') : '<div class="empty-state"><div class="empty-state-icon">🔔</div><div>No '+filter+' reminders</div></div>';
 
@@ -1003,13 +1066,12 @@ function updateReminderBadge() {
   const today = new Date().toISOString().split('T')[0];
   const overdue = state.reminders.filter(r => !r.done && r.due_date <= today).length;
   const badge = document.getElementById('reminder-count');
-  if (overdue > 0) { badge.style.display = 'inline-block'; badge.textContent = overdue; }
-  else badge.style.display = 'none';
+  if (badge) { if (overdue > 0) { badge.style.display = 'inline-block'; badge.textContent = overdue; } else badge.style.display = 'none'; }
 }
 
 function openAddReminder() {
   state.editReminderId = null;
-  document.getElementById('reminder-modal-title').textContent = 'Add reminder';
+  document.getElementById('reminder-modal-title').textContent = 'Add Reminder';
   document.getElementById('edit-reminder-id').value = '';
   document.getElementById('rf-title').value = '';
   document.getElementById('rf-notes').value = '';
@@ -1017,7 +1079,11 @@ function openAddReminder() {
   document.getElementById('rf-time').value = '10:00';
   document.getElementById('rf-lead').innerHTML = '<option value="">— none —</option>'
     + state.leads.map(l => '<option value="'+l.id+'">'+esc(l.name)+(l.current_company?' — '+esc(l.current_company):'')+'</option>').join('');
-  document.getElementById('rf-assigned').value = state.user.id||'';
+  const rfAssigned = document.getElementById('rf-assigned');
+  if (rfAssigned) {
+    const opts = state.profiles.map(p => '<option value="'+p.id+'" '+(p.id===state.user.id?'selected':'')+'>'+esc(p.name)+'</option>').join('');
+    rfAssigned.innerHTML = '<option value="">Unassigned</option>'+opts;
+  }
   openModal('add-reminder-modal');
 }
 function openReminderForLead(leadId) {
@@ -1028,7 +1094,7 @@ function openReminderForLead(leadId) {
 function openEditReminder(id) {
   const r = state.reminders.find(x => x.id === id); if (!r) return;
   state.editReminderId = id;
-  document.getElementById('reminder-modal-title').textContent = 'Edit reminder';
+  document.getElementById('reminder-modal-title').textContent = 'Edit Reminder';
   document.getElementById('edit-reminder-id').value = id;
   document.getElementById('rf-title').value = r.title||'';
   document.getElementById('rf-notes').value = r.notes||'';
@@ -1036,7 +1102,11 @@ function openEditReminder(id) {
   document.getElementById('rf-time').value = r.due_time||'10:00';
   document.getElementById('rf-lead').innerHTML = '<option value="">— none —</option>'
     + state.leads.map(l => '<option value="'+l.id+'" '+(l.id===r.lead_id?'selected':'')+'>'+esc(l.name)+(l.current_company?' — '+esc(l.current_company):'')+'</option>').join('');
-  document.getElementById('rf-assigned').value = r.assigned_to||'';
+  const rfAssigned = document.getElementById('rf-assigned');
+  if (rfAssigned) {
+    const opts = state.profiles.map(p => '<option value="'+p.id+'" '+(p.id===r.assigned_to?'selected':'')+'>'+esc(p.name)+'</option>').join('');
+    rfAssigned.innerHTML = '<option value="">Unassigned</option>'+opts;
+  }
   openModal('add-reminder-modal');
 }
 async function saveReminder() {
@@ -1047,7 +1117,7 @@ async function saveReminder() {
   const payload = {
     title,
     lead_id: document.getElementById('rf-lead').value||null,
-    assigned_to: document.getElementById('rf-assigned').value||null,
+    assigned_to: document.getElementById('rf-assigned').value||state.user.id,
     due_date: date,
     due_time: document.getElementById('rf-time').value||'10:00',
     notes: document.getElementById('rf-notes').value,
@@ -1060,7 +1130,7 @@ async function saveReminder() {
   await loadReminders(); renderReminders();
 }
 async function markReminderDone(id) { await db.from('reminders').update({ done: true }).eq('id', id); await loadReminders(); renderReminders(); }
-async function deleteReminder(id) { if (!confirm('Delete this reminder?')) return; await db.from('reminders').delete().eq('id', id); await loadReminders(); renderReminders(); }
+async function deleteReminder(id) { if (!confirm('Delete?')) return; await db.from('reminders').delete().eq('id', id); await loadReminders(); renderReminders(); }
 
 // ── REMINDER TOAST ──
 let currentPopupReminder = null;
@@ -1095,11 +1165,11 @@ function snoozeReminder() {
 
 // ── CSV IMPORT / EXPORT ──
 function exportCSV() {
-  const headers = ['Name','Phone','Email','Current CTC','Expected CTC','Current Company','Experience','Designation','Profile','Location','Willing to Relocate','Remote Preference','Platform','Stage','Follow-up Date','Created On','Notes'];
+  const headers = ['Name','Phone','Email','Current CTC','Expected CTC','Joining Salary','Current Company','Experience','Designation','Profile','Location','Willing to Relocate','Remote Preference','Platform','Stage','Follow-up Date','Created On','Notes'];
   const rows = state.leads.map(l => [
-    l.name, l.phone, l.email, l.current_ctc, l.expected_ctc, l.current_company,
-    l.experience, l.designation, l.profile, l.location, l.willing_to_relocate,
-    l.remote_preference, l.platform, l.stage, l.followup_date, l.created_at?.split('T')[0], l.notes
+    l.name,l.phone,l.email,l.current_ctc,l.expected_ctc,l.joining_salary,l.current_company,
+    l.experience,l.designation,l.profile,l.location,l.willing_to_relocate,
+    l.remote_preference,l.platform,l.stage,l.followup_date,l.created_at?.split('T')[0],l.notes
   ].map(v => '"'+(v||'').toString().replace(/"/g,'""')+'"').join(','));
   const csv = [headers.join(','), ...rows].join('\n');
   const a = document.createElement('a');
@@ -1128,22 +1198,14 @@ function importCSV(event) {
     const lines = e.target.result.split('\n').filter(l => l.trim());
     const headers = parseCSVLine(lines[0]).map(h => h.toLowerCase().trim());
     const fieldMap = {
-      name: ['name','full name','candidate name'],
-      phone: ['phone','mobile','number','contact number'],
-      email: ['email','mail id','email address'],
-      current_ctc: ['current ctc','currentctc','cur ctc'],
-      expected_ctc: ['expected ctc','expectedctc','exp ctc'],
-      current_company: ['current company','company','employer'],
-      experience: ['experience','total experience','exp'],
-      designation: ['designation','title','job title'],
-      profile: ['profile','function','domain'],
-      location: ['location','city'],
-      willing_to_relocate: ['willing to relocate','relocate','relocation'],
-      remote_preference: ['remote preference','remote','work from home'],
-      platform: ['platform','source platform'],
-      stage: ['stage','status'],
-      followup_date: ['follow-up date','followup date','follow up'],
-      notes: ['notes','note','comments']
+      name:['name','full name','candidate name'],phone:['phone','mobile','number'],
+      email:['email','mail id','email address'],current_ctc:['current ctc','currentctc'],
+      expected_ctc:['expected ctc','expectedctc'],joining_salary:['joining salary','joining package'],
+      current_company:['current company','company'],experience:['experience','total experience'],
+      designation:['designation','title'],profile:['profile','function'],
+      location:['location','city'],willing_to_relocate:['willing to relocate','relocate'],
+      remote_preference:['remote preference','remote'],platform:['platform','source platform'],
+      stage:['stage','status'],followup_date:['follow-up date','followup date'],notes:['notes','comments']
     };
     const colIndex = {};
     Object.entries(fieldMap).forEach(([key, aliases]) => {
@@ -1152,46 +1214,43 @@ function importCSV(event) {
     });
     const rows = lines.slice(1).map(line => parseCSVLine(line));
     const toInsert = rows.filter(r => r.length >= 1 && r[colIndex.name||0]?.trim()).map(r => ({
-      name: (r[colIndex.name]||'Unknown').trim(),
-      phone: (r[colIndex.phone]!=null ? r[colIndex.phone]:'').trim(),
-      email: (r[colIndex.email]!=null ? r[colIndex.email]:'').trim(),
-      current_ctc: +((r[colIndex.current_ctc]||'').replace(/[^0-9.]/g,''))||null,
-      expected_ctc: +((r[colIndex.expected_ctc]||'').replace(/[^0-9.]/g,''))||null,
-      current_company: (r[colIndex.current_company]!=null ? r[colIndex.current_company]:'').trim(),
-      experience: (r[colIndex.experience]!=null ? r[colIndex.experience]:'').trim(),
-      designation: (r[colIndex.designation]!=null ? r[colIndex.designation]:'').trim(),
-      profile: (r[colIndex.profile]!=null ? r[colIndex.profile]:'').trim(),
-      location: (r[colIndex.location]!=null ? r[colIndex.location]:'').trim(),
-      willing_to_relocate: (r[colIndex.willing_to_relocate]||'').trim()||null,
-      remote_preference: (r[colIndex.remote_preference]||'').trim()||null,
-      platform: (r[colIndex.platform]||'').trim()||null,
-      stage: STAGES.includes((r[colIndex.stage]||'').trim()) ? (r[colIndex.stage]||'').trim() : 'Interested',
-      followup_date: (r[colIndex.followup_date]||'').trim()||null,
-      notes: (r[colIndex.notes]!=null ? r[colIndex.notes]:'').trim(),
-      created_by: state.user.id
+      name:(r[colIndex.name]||'Unknown').trim(),phone:(r[colIndex.phone]!=null?r[colIndex.phone]:'').trim(),
+      email:(r[colIndex.email]!=null?r[colIndex.email]:'').trim(),
+      current_ctc:+((r[colIndex.current_ctc]||'').replace(/[^0-9.]/g,''))||null,
+      expected_ctc:+((r[colIndex.expected_ctc]||'').replace(/[^0-9.]/g,''))||null,
+      joining_salary:+((r[colIndex.joining_salary]||'').replace(/[^0-9.]/g,''))||null,
+      current_company:(r[colIndex.current_company]!=null?r[colIndex.current_company]:'').trim(),
+      experience:(r[colIndex.experience]!=null?r[colIndex.experience]:'').trim(),
+      designation:(r[colIndex.designation]!=null?r[colIndex.designation]:'').trim(),
+      profile:(r[colIndex.profile]!=null?r[colIndex.profile]:'').trim(),
+      location:(r[colIndex.location]!=null?r[colIndex.location]:'').trim(),
+      willing_to_relocate:(r[colIndex.willing_to_relocate]||'').trim()||null,
+      remote_preference:(r[colIndex.remote_preference]||'').trim()||null,
+      platform:(r[colIndex.platform]||'').trim()||null,
+      stage:STAGES.includes((r[colIndex.stage]||'').trim())?(r[colIndex.stage]||'').trim():'New Candidate',
+      notes:(r[colIndex.notes]!=null?r[colIndex.notes]:'').trim(),
+      created_by:state.user.id
     }));
-    if (!toInsert.length) { alert('No valid rows found in CSV.'); return; }
+    if (!toInsert.length) { alert('No valid rows found.'); return; }
     if (!confirm('Import '+toInsert.length+' candidates?')) return;
     let imported=0, errors=0;
     for (let i=0; i<toInsert.length; i+=100) {
-      const batch = toInsert.slice(i, i+100);
+      const batch = toInsert.slice(i,i+100);
       const result = await db.from('leads').insert(batch);
-      if (result.error) { console.error('Batch error:', result.error); errors+=batch.length; }
-      else imported += batch.length;
+      if (result.error) errors+=batch.length; else imported+=batch.length;
     }
     await loadLeads(); renderLeads(); renderDashboard();
-    alert(errors>0 ? 'Imported '+imported+' candidates.\n'+errors+' rows failed.' : '✓ Imported '+imported+' candidates successfully!');
+    alert(errors>0?'Imported '+imported+'. '+errors+' failed.':'✓ Imported '+imported+' candidates!');
   };
   reader.readAsText(file);
-  event.target.value = '';
+  event.target.value='';
 }
 
 // ── SETTINGS ──
 async function inviteTeamMember() {
-  const email = document.getElementById('invite-email').value.trim();
-  if (!email) return;
-  alert('Create their account from Supabase dashboard → Auth → Users → Invite user.\n\nEmail: '+email);
-  document.getElementById('invite-email').value = '';
+  const email = document.getElementById('invite-email').value.trim(); if (!email) return;
+  alert('Go to Supabase → Authentication → Users → Add user\n\nEmail: '+email);
+  document.getElementById('invite-email').value='';
 }
 
 // ── HELPERS ──
@@ -1199,6 +1258,7 @@ function esc(str) { return String(str||'').replace(/&/g,'&amp;').replace(/</g,'&
 function formatINR(n) { if (n>=100000) return (n/100000).toFixed(1)+'L'; if (n>=1000) return (n/1000).toFixed(0)+'K'; return n.toLocaleString('en-IN'); }
 function formatDate(dateStr) { if (!dateStr) return ''; const d = new Date(dateStr+'T00:00:00'); return d.toLocaleDateString('en-IN', { day:'numeric', month:'short', year:'numeric' }); }
 function formatDateTime(isoStr) { if (!isoStr) return ''; return new Date(isoStr).toLocaleString('en-IN', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' }); }
+function toggleAdvancedFilters() { const el=document.getElementById('advanced-filters'); if(el) el.style.display=el.style.display==='none'?'flex':'none'; }
 
 // ── GLOBALS ──
 window.handleLogin=handleLogin; window.handleLogout=handleLogout; window.showForgot=showForgot;
@@ -1209,13 +1269,14 @@ window.openAddReminder=openAddReminder; window.openReminderForLead=openReminderF
 window.doneReminderToast=doneReminderToast; window.snoozeReminder=snoozeReminder; window.closeToast=closeToast;
 window.exportCSV=exportCSV; window.importCSV=importCSV;
 window.applyFilters=applyFilters; window.debounceFilter=debounceFilter; window.clearFilters=clearFilters;
+window.toggleAdvancedFilters=toggleAdvancedFilters;
 window.goPage=goPage; window.toggleSelect=toggleSelect; window.toggleSelectAll=toggleSelectAll;
 window.bulkMoveStage=bulkMoveStage; window.bulkDelete=bulkDelete; window.bulkAssign=bulkAssign;
 window.kanbanDragStart=kanbanDragStart; window.kanbanDragEnd=kanbanDragEnd; window.kanbanDragOver=kanbanDragOver; window.kanbanDragLeave=kanbanDragLeave; window.kanbanDrop=kanbanDrop;
 window.setDashPeriod=setDashPeriod; window.setDashCustomRange=setDashCustomRange; window.setDashAssociate=setDashAssociate;
 window.openAddTask=openAddTask; window.openEditTask=openEditTask; window.saveTask=saveTask; window.toggleTaskDone=toggleTaskDone; window.deleteTask=deleteTask; window.renderTasks=renderTasks;
 window.inviteTeamMember=inviteTeamMember;
-window.toggleAdvancedFilters=function(){const el=document.getElementById('advanced-filters');if(el)el.style.display=el.style.display==='none'?'flex':'none';};
+window.renderJoinings=renderJoinings; window.exportJoiningsCSV=exportJoiningsCSV;
 
 (async () => {
   const { data: { session } } = await db.auth.getSession();
