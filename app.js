@@ -374,11 +374,9 @@ function renderJoinings() {
 
   const joined = state.leads.filter(l => l.stage === 'Joined');
 
-  // Build month/year filter options
   const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
   const now = new Date();
 
-  // Month selector
   const monthSel = document.getElementById('joining-month');
   const yearSel = document.getElementById('joining-year');
   if (monthSel && !monthSel.innerHTML) {
@@ -402,7 +400,6 @@ function renderJoinings() {
     });
   }
 
-  // Group by associate
   const byAssoc = {};
   filtered.forEach(l => {
     const assignees = l.assigned_profiles ? l.assigned_profiles.map(ap => ap.profile).filter(Boolean) : [];
@@ -429,7 +426,7 @@ function renderJoinings() {
     '<div class="joining-group">'
     +'<div class="joining-group-header"><span class="joining-assoc-name">'+esc(assoc)+'</span><span class="joining-assoc-count">'+leads.length+' joined</span></div>'
     +'<table class="data-table" style="margin-bottom:0">'
-    +'<thead><tr><th>Name</th><th>Company</th><th>Designation</th><th>Profile</th><th>Joining Salary</th><th>Location</th><th>Date</th></tr></thead>'
+    +'<thead><tr><th>Name</th><th>Company Applied For</th><th>Designation</th><th>Profile</th><th>Joining Salary</th><th>Location</th><th>Date</th></tr></thead>'
     +'<tbody>'+leads.map(l =>
       '<tr>'
       +'<td><div class="lead-name">'+esc(l.name)+'</div></td>'
@@ -456,7 +453,7 @@ function exportJoiningsCSV() {
       return d.getMonth()+1 === selMonth && d.getFullYear() === selYear;
     });
   }
-  const headers = ['Name','Phone','Email','Company','Designation','Profile','Location','Joining Salary','Associate','Joined Date'];
+  const headers = ['Name','Phone','Email','Company Applied For','Designation','Profile','Location','Joining Salary','Associate','Joined Date'];
   const rows = filtered.map(l => {
     const assignees = l.assigned_profiles ? l.assigned_profiles.map(ap => ap.profile?.name).filter(Boolean).join('; ') : '';
     return [l.name,l.phone,l.email,l.current_company,l.designation,l.profile,l.location,l.joining_salary||'',assignees,l.updated_at?.split('T')[0]||'']
@@ -756,7 +753,8 @@ async function saveLead() {
   const editId = state.editLeadId;
   if (editId) {
     const old = state.leads.find(l => l.id === editId);
-    await db.from('leads').update(payload).eq('id', editId);
+    const { error: updateError } = await db.from('leads').update(payload).eq('id', editId);
+    if (updateError) { alert('Failed to update candidate:\n' + updateError.message); return; }
     if (old && old.stage !== payload.stage) {
       await db.from('activities').insert({ lead_id: editId, user_id: state.user.id, type:'stage_change', text:'Stage changed from '+old.stage+' to '+payload.stage });
     } else {
@@ -764,7 +762,11 @@ async function saveLead() {
     }
   } else {
     payload.created_by = state.user.id;
-    const { data } = await db.from('leads').insert(payload).select().single();
+    const { data, error: insertError } = await db.from('leads').insert(payload).select().single();
+    if (insertError) {
+      alert('Failed to save candidate. Please check the following:\n\n' + insertError.message + '\n\nIf this keeps happening, contact your admin.');
+      return;
+    }
     if (data) {
       await db.from('activities').insert({ lead_id: data.id, user_id: state.user.id, type:'created', text:'Candidate added' });
       if (!state.isAdmin) {
@@ -834,6 +836,7 @@ async function openLeadDetail(id) {
     +'<div class="info-field"><div class="info-label">Relocate?</div><div class="info-value">'+esc(l.willing_to_relocate||'—')+'</div></div>'
     +'<div class="info-field"><div class="info-label">Remote?</div><div class="info-value">'+esc(l.remote_preference||'—')+'</div></div>'
     +'<div class="info-field"><div class="info-label">Platform</div><div class="info-value">'+esc(l.platform||'—')+'</div></div>'
+    +'<div class="info-field"><div class="info-label">Company Applied For</div><div class="info-value">'+esc(l.current_company||'—')+'</div></div>'
     +'</div>'+(l.notes?'<div style="margin-top:10px;font-size:13px;color:var(--text-2);background:var(--surface-2);padding:10px;border-radius:var(--radius-sm)">'+esc(l.notes)+'</div>':'')+'</div>'
     +'<div class="panel-section"><div class="panel-section-title">Candidate Status</div><div class="stage-switcher">'+stageButtons+'</div></div>'
     + assignSection
@@ -1165,7 +1168,7 @@ function snoozeReminder() {
 
 // ── CSV IMPORT / EXPORT ──
 function exportCSV() {
-  const headers = ['Name','Phone','Email','Current CTC','Expected CTC','Joining Salary','Current Company','Experience','Designation','Profile','Location','Willing to Relocate','Remote Preference','Platform','Stage','Follow-up Date','Created On','Notes'];
+  const headers = ['Name','Phone','Email','Current CTC','Expected CTC','Joining Salary','Company Applied For','Experience','Designation','Profile','Location','Willing to Relocate','Remote Preference','Platform','Stage','Follow-up Date','Created On','Notes'];
   const rows = state.leads.map(l => [
     l.name,l.phone,l.email,l.current_ctc,l.expected_ctc,l.joining_salary,l.current_company,
     l.experience,l.designation,l.profile,l.location,l.willing_to_relocate,
@@ -1201,7 +1204,7 @@ function importCSV(event) {
       name:['name','full name','candidate name'],phone:['phone','mobile','number'],
       email:['email','mail id','email address'],current_ctc:['current ctc','currentctc'],
       expected_ctc:['expected ctc','expectedctc'],joining_salary:['joining salary','joining package'],
-      current_company:['current company','company'],experience:['experience','total experience'],
+      current_company:['current company','company','company applied for'],experience:['experience','total experience'],
       designation:['designation','title'],profile:['profile','function'],
       location:['location','city'],willing_to_relocate:['willing to relocate','relocate'],
       remote_preference:['remote preference','remote'],platform:['platform','source platform'],
@@ -1282,4 +1285,3 @@ window.renderJoinings=renderJoinings; window.exportJoiningsCSV=exportJoiningsCSV
   const { data: { session } } = await db.auth.getSession();
   if (session?.user) { await initApp(session.user); }
 })();
-
