@@ -722,14 +722,22 @@ async function saveLead() {
 
   // Mandatory field validation
   const missing = [];
+  const isNotInterested = stage === 'Not Interested';
+
+  // Always required
   if (!name) missing.push('Name');
   if (!email) missing.push('Mail ID');
   if (!phone) missing.push('Phone Number');
   if (!designation) missing.push('Designation');
-  if (!location) missing.push('Location');
-  if (!current_ctc) missing.push('Current Package');
-  if (!experience) missing.push('Experience');
   if (!stage) missing.push('Candidate Status');
+
+  // Only required if NOT "Not Interested"
+  if (!isNotInterested) {
+    if (!location) missing.push('Location');
+    if (!current_ctc) missing.push('Current Package');
+    if (!experience) missing.push('Experience');
+  }
+
   if (missing.length) { alert('Please fill in required fields:\n• ' + missing.join('\n• ')); return; }
 
   const payload = {
