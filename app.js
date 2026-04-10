@@ -10,14 +10,16 @@ const STAGES = [
   'New Candidate','Interested','Not Interested','Forwarded to Client',
   'Selected Round 1','Selected Round 2','Selected Round 3',
   'Joining Date Given','Joined','Face to Face Round',
-  'Profile Not Match','DNP','Follow Up Later'
+  'Profile Not Match','DNP','Follow Up Later',
+  'Rejected','Feedback Pending','On Hold'
 ];
 const STAGE_COLORS = {
   'New Candidate':'#64748B','Interested':'#10B981','Not Interested':'#EF4444',
   'Forwarded to Client':'#3B82F6','Selected Round 1':'#8B5CF6',
   'Selected Round 2':'#7C3AED','Selected Round 3':'#6D28D9',
   'Joining Date Given':'#F59E0B','Joined':'#22C55E','Face to Face Round':'#06B6D4',
-  'Profile Not Match':'#F97316','DNP':'#DC2626','Follow Up Later':'#94A3B8'
+  'Profile Not Match':'#F97316','DNP':'#DC2626','Follow Up Later':'#94A3B8',
+  'Rejected':'#B91C1C','Feedback Pending':'#D97706','On Hold':'#6B7280'
 };
 
 const EXPERIENCE_OPTIONS = [
@@ -47,6 +49,9 @@ const INDIA_CITIES = [
   'Vadodara','Varanasi','Visakhapatnam','Remote','Other'
 ];
 const PLATFORM_OPTIONS = ['LinkedIn','Naukri','Shine','Indeed','Other'];
+
+// Stages where only minimal fields are required
+const MINIMAL_REQUIRED_STAGES = ['DNP', 'Not Interested'];
 
 let state = {
   user:null, profile:null, profiles:[], leads:[], filteredLeads:[], reminders:[],
@@ -719,35 +724,43 @@ async function saveLead() {
   const current_ctc = document.getElementById('lf-current-ctc').value;
   const experience = document.getElementById('lf-experience').value;
   const stage = document.getElementById('lf-stage').value;
+  const profile = document.getElementById('lf-profile').value;
+  const current_company = document.getElementById('lf-current-company').value.trim();
 
-  // Mandatory field validation
   const missing = [];
-  const isNotInterested = stage === 'Not Interested';
 
-  // Always required
-  if (!name) missing.push('Name');
-  if (!email) missing.push('Mail ID');
+  // ── Always required (all stages) ──
+  if (!name) missing.push('Full Name');
+  if (!email) missing.push('Email ID');
   if (!phone) missing.push('Phone Number');
-  if (!designation) missing.push('Designation');
+  if (!profile) missing.push('Profile / Function');
+  if (!current_company) missing.push('Company Applied For');
   if (!stage) missing.push('Candidate Status');
 
-  // Only required if NOT "Not Interested"
-  if (!isNotInterested) {
+  // ── Minimal stages: DNP and Not Interested — only the above 6 fields required ──
+  const isMinimalStage = MINIMAL_REQUIRED_STAGES.includes(stage);
+
+  // ── All other stages require these additional fields ──
+  if (!isMinimalStage) {
+    if (!designation) missing.push('Designation');
     if (!location) missing.push('Location');
     if (!current_ctc) missing.push('Current Package');
-    if (!experience) missing.push('Experience');
+    if (!experience) missing.push('Total Experience');
   }
 
-  if (missing.length) { alert('Please fill in required fields:\n• ' + missing.join('\n• ')); return; }
+  if (missing.length) {
+    alert('Please fill in required fields:\n• ' + missing.join('\n• '));
+    return;
+  }
 
   const payload = {
     name, phone, email,
     current_ctc: +current_ctc||null,
     expected_ctc: +document.getElementById('lf-expected-ctc').value||null,
     joining_salary: +document.getElementById('lf-joining-salary').value||null,
-    current_company: document.getElementById('lf-current-company').value,
+    current_company,
     experience, designation,
-    profile: document.getElementById('lf-profile').value,
+    profile,
     location,
     willing_to_relocate: document.getElementById('lf-relocate').value,
     remote_preference: document.getElementById('lf-remote').value,
