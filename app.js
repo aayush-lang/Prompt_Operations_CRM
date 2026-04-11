@@ -19,7 +19,7 @@ const STAGE_COLORS = {
   'Selected Round 2':'#7C3AED','Selected Round 3':'#6D28D9',
   'Joining Date Given':'#F59E0B','Joined':'#22C55E','Face to Face Round':'#06B6D4',
   'Profile Not Match':'#F97316','DNP':'#DC2626','Follow Up Later':'#94A3B8',
-  'Rejected':'#B91C1C','Feedback Pending':'#D97706','On Hold':'#6B7280'
+  'Rejected':'#B91C1C','Feedback Pending':'#0891B2','On Hold':'#6B7280'
 };
 
 const EXPERIENCE_OPTIONS = [
@@ -50,8 +50,8 @@ const INDIA_CITIES = [
 ];
 const PLATFORM_OPTIONS = ['LinkedIn','Naukri','Shine','Indeed','Other'];
 
-// Stages where only minimal fields are required
-const MINIMAL_REQUIRED_STAGES = ['DNP', 'Not Interested'];
+// Stages where only minimal fields are required (Name, Mail, Profile, Number + always-required)
+const MINIMAL_REQUIRED_STAGES = ['Not Interested', 'DNP'];
 
 let state = {
   user:null, profile:null, profiles:[], leads:[], filteredLeads:[], reminders:[],
@@ -137,20 +137,30 @@ async function loadProfiles() {
 }
 
 async function loadLeads() {
-  let query = db.from('leads')
-    .select('*, assigned_profiles:lead_assignees(profile:profiles(id,name,avatar_initials))')
-    .order(state.sortCol, { ascending: state.sortDir === 'asc' });
-  const { data, error } = await query;
-  if (!error && data) {
-    if (state.isAdmin) {
-      state.leads = data;
-    } else {
-      state.leads = data.filter(l =>
-        l.assigned_profiles && l.assigned_profiles.some(ap => ap.profile?.id === state.user.id)
-      );
-    }
-    applyFilters();
+  let allData = [];
+  let from = 0;
+  const batchSize = 1000;
+
+  while (true) {
+    const { data, error } = await db.from('leads')
+      .select('*, assigned_profiles:lead_assignees(profile:profiles(id,name,avatar_initials))')
+      .order(state.sortCol, { ascending: state.sortDir === 'asc' })
+      .range(from, from + batchSize - 1);
+
+    if (error || !data || data.length === 0) break;
+    allData = allData.concat(data);
+    if (data.length < batchSize) break;
+    from += batchSize;
   }
+
+  if (state.isAdmin) {
+    state.leads = allData;
+  } else {
+    state.leads = allData.filter(l =>
+      l.assigned_profiles && l.assigned_profiles.some(ap => ap.profile?.id === state.user.id)
+    );
+  }
+  applyFilters();
 }
 
 async function loadReminders() {
@@ -731,16 +741,15 @@ async function saveLead() {
 
   // ── Always required (all stages) ──
   if (!name) missing.push('Full Name');
-  if (!email) missing.push('Email ID');
+  if (!email) missing.push('Mail ID');
   if (!phone) missing.push('Phone Number');
   if (!profile) missing.push('Profile / Function');
   if (!current_company) missing.push('Company Applied For');
   if (!stage) missing.push('Candidate Status');
 
-  // ── Minimal stages: DNP and Not Interested — only the above 6 fields required ──
+  // ── Additional required fields for non-minimal stages ──
+  // DNP and Not Interested only need the above 6 fields
   const isMinimalStage = MINIMAL_REQUIRED_STAGES.includes(stage);
-
-  // ── All other stages require these additional fields ──
   if (!isMinimalStage) {
     if (!designation) missing.push('Designation');
     if (!location) missing.push('Location');
