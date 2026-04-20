@@ -479,6 +479,26 @@ function renderJoinings() {
     return;
   }
 
+  // ── SUMMARY STATS BAR ──
+  const totalPlacements = filtered.length;
+  const totalRevenue = filtered.reduce((s, l) => s + (+l.joining_salary || 0), 0);
+  const avgSalary = totalPlacements ? Math.round(totalRevenue / totalPlacements) : 0;
+  const topAssocMap = {};
+  filtered.forEach(l => {
+    const assignees = l.assigned_profiles ? l.assigned_profiles.map(ap => ap.profile).filter(Boolean) : [];
+    assignees.forEach(p => { topAssocMap[p.name] = (topAssocMap[p.name] || 0) + 1; });
+  });
+  const topAssoc = Object.entries(topAssocMap).sort((a,b) => b[1]-a[1])[0];
+
+  const summaryEl = document.getElementById('joinings-summary');
+  if (summaryEl) {
+    summaryEl.innerHTML =
+      '<div class="joining-stat-card"><div class="joining-stat-label">Total Placements</div><div class="joining-stat-value purple">'+totalPlacements+'</div></div>'
+      + '<div class="joining-stat-card"><div class="joining-stat-label">Total Joining Salary</div><div class="joining-stat-value green">₹'+formatINR(totalRevenue)+'</div></div>'
+      + '<div class="joining-stat-card"><div class="joining-stat-label">Avg Joining Salary</div><div class="joining-stat-value amber">₹'+formatINR(avgSalary)+'</div></div>'
+      + (topAssoc ? '<div class="joining-stat-card"><div class="joining-stat-label">Top Associate</div><div class="joining-stat-value" style="color:var(--blue)">'+esc(topAssoc[0])+'<span style="font-size:13px;color:var(--text-3);font-weight:400;margin-left:6px">'+topAssoc[1]+' placed</span></div></div>' : '');
+  }
+
   const byAssoc = {};
   filtered.forEach(l => {
     const assignees = l.assigned_profiles ? l.assigned_profiles.map(ap => ap.profile).filter(Boolean) : [];
