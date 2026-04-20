@@ -355,3 +355,12 @@ body.is-admin .admin-only { display: revert; }
 .cs-icon { font-size: 56px; margin-bottom: 8px; }
 .cs-title { font-size: 32px; font-weight: 700; color: white; }
 .cs-sub { font-size: 15px; color: rgba(255,255,255,0.4); line-height: 1.7; }
+.joining-group { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); margin-bottom:16px; overflow:hidden; box-shadow:var(--shadow); }
+.joining-group-header { display:flex; justify-content:space-between; align-items:center; padding:1rem 1.25rem; background:var(--surface-2); border-bottom:1px solid var(--border); }
+.joining-assoc-name { font-size:14px; font-weight:600; color:var(--text-1); }
+.joining-assoc-count { background:var(--purple-light); color:var(--purple); font-size:13px; font-weight:700; padding:3px 12px; border-radius:20px; }
+.joining-cards-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); gap:12px; padding:1rem 1.25rem; }
+.joining-candidate-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-sm); padding:14px; transition:box-shadow 0.15s; }
+.joining-candidate-card:hover { box-shadow:var(--shadow-md); }
+.jc-label { font-size:10px; color:var(--text-3); text-transform:uppercase; letter-spacing:0.4px; margin-bottom:2px; }
+.jc-value { font-size:12px; color:var(--text-1); font-weight:500; }
