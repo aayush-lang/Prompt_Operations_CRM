@@ -315,11 +315,43 @@ body.is-admin .admin-only { display: revert; }
   .metrics-row { grid-template-columns: 1fr 1fr; }
 }
 
-
-
-/* ── NEW JOININGS ── */
+/* ── JOININGS ── */
 .joining-month-group { margin-bottom: 1.5rem; }
 .joining-month-header { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: var(--purple-light); border-radius: var(--radius) var(--radius) 0 0; border: 1px solid var(--border); border-bottom: none; }
 .joining-month-label { font-size: 13px; font-weight: 700; color: var(--purple); }
 .joining-month-count { font-size: 12px; color: var(--purple); background: white; padding: 2px 10px; border-radius: 12px; font-weight: 600; }
 .joining-month-group .data-table { border-radius: 0 0 var(--radius) var(--radius); }
+
+/* ── WORKSPACE CHOOSER ── */
+#workspace-screen {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0F0E1A;
+  background-image: radial-gradient(circle at 20% 30%, rgba(79,70,229,0.25) 0%, transparent 50%), radial-gradient(circle at 80% 70%, rgba(99,102,241,0.15) 0%, transparent 50%);
+}
+.ws-wrap { display: flex; flex-direction: column; align-items: center; width: 100%; max-width: 560px; padding: 2rem; }
+.ws-header { text-align: center; margin-bottom: 2.5rem; }
+.ws-title { font-size: 28px; font-weight: 700; color: white; margin-top: 1.25rem; margin-bottom: 8px; }
+.ws-sub { font-size: 14px; color: rgba(255,255,255,0.45); }
+.ws-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; width: 100%; }
+.ws-card { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 2rem 1.5rem; display: flex; flex-direction: column; align-items: center; gap: 10px; cursor: pointer; transition: all 0.2s; font-family: inherit; position: relative; text-align: center; }
+.ws-card:hover:not(.ws-card-soon) { background: rgba(99,102,241,0.15); border-color: rgba(99,102,241,0.5); transform: translateY(-2px); box-shadow: 0 8px 32px rgba(79,70,229,0.2); }
+.ws-card-soon { opacity: 0.5; cursor: not-allowed; }
+.ws-card-icon { font-size: 36px; margin-bottom: 4px; }
+.ws-card-name { font-size: 16px; font-weight: 700; color: white; }
+.ws-card-desc { font-size: 12px; color: rgba(255,255,255,0.4); line-height: 1.5; }
+.ws-card-badge { padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; margin-top: 4px; }
+.ws-badge-live { background: rgba(16,185,129,0.2); color: #34D399; border: 1px solid rgba(16,185,129,0.3); }
+.ws-badge-soon { background: rgba(107,114,128,0.2); color: #9CA3AF; border: 1px solid rgba(107,114,128,0.3); }
+.ws-footer { margin-top: 2rem; }
+.ws-logout-btn { background: none; border: none; color: rgba(255,255,255,0.3); font-size: 13px; font-family: inherit; cursor: pointer; padding: 8px 16px; border-radius: var(--radius-sm); transition: color 0.15s; }
+.ws-logout-btn:hover { color: rgba(255,255,255,0.6); }
+
+/* ── COMING SOON ── */
+#coming-soon-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; background: #0F0E1A; background-image: radial-gradient(circle at 50% 40%, rgba(79,70,229,0.2) 0%, transparent 60%); flex-direction: column; }
+.cs-wrap { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 16px; padding: 2rem; }
+.cs-icon { font-size: 56px; margin-bottom: 8px; }
+.cs-title { font-size: 32px; font-weight: 700; color: white; }
+.cs-sub { font-size: 15px; color: rgba(255,255,255,0.4); line-height: 1.7; }
