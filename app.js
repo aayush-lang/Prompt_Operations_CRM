@@ -427,13 +427,11 @@ function setDashCustomRange() {
 }
 function setDashAssociate(val) { state.dashAssociate = val; renderDashboard(); }
 
-// ── JOININGS TAB ──
 function renderJoinings() {
   const el = document.getElementById('joinings-list');
   if (!el) return;
 
   const joined = state.leads.filter(l => l.stage === 'Joined');
-
   const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
   const now = new Date();
 
@@ -449,8 +447,16 @@ function renderJoinings() {
     yearSel.innerHTML = years.map(y => '<option value="'+y+'" '+(y===state.joiningYear?'selected':'')+'>'+y+'</option>').join('');
   }
 
+  const assocFilterEl = document.getElementById('joining-assoc-filter');
+  if (assocFilterEl && !assocFilterEl.dataset.init) {
+    assocFilterEl.innerHTML = '<option value="">All associates</option>'
+      + state.profiles.map(p => '<option value="'+p.id+'">'+esc(p.name)+'</option>').join('');
+    assocFilterEl.dataset.init = '1';
+  }
+
   const selMonth = +(document.getElementById('joining-month')?.value || state.joiningMonth || 0);
   const selYear = +(document.getElementById('joining-year')?.value || state.joiningYear);
+  const selAssoc = document.getElementById('joining-assoc-filter')?.value || '';
 
   let filtered = joined;
   if (selMonth && selYear) {
@@ -459,20 +465,11 @@ function renderJoinings() {
       return d.getMonth()+1 === selMonth && d.getFullYear() === selYear;
     });
   }
-
-  const byAssoc = {};
-  filtered.forEach(l => {
-    const assignees = l.assigned_profiles ? l.assigned_profiles.map(ap => ap.profile).filter(Boolean) : [];
-    if (assignees.length) {
-      assignees.forEach(p => {
-        if (!byAssoc[p.name]) byAssoc[p.name] = [];
-        byAssoc[p.name].push(l);
-      });
-    } else {
-      if (!byAssoc['Unassigned']) byAssoc['Unassigned'] = [];
-      byAssoc['Unassigned'].push(l);
-    }
-  });
+  if (selAssoc) {
+    filtered = filtered.filter(l =>
+      l.assigned_profiles && l.assigned_profiles.some(ap => ap.profile?.id === selAssoc)
+    );
+  }
 
   const totalEl = document.getElementById('joinings-total');
   if (totalEl) totalEl.textContent = filtered.length + ' joined';
@@ -482,23 +479,51 @@ function renderJoinings() {
     return;
   }
 
-  el.innerHTML = Object.entries(byAssoc).map(([assoc, leads]) =>
-    '<div class="joining-group">'
-    +'<div class="joining-group-header"><span class="joining-assoc-name">'+esc(assoc)+'</span><span class="joining-assoc-count">'+leads.length+' joined</span></div>'
-    +'<table class="data-table" style="margin-bottom:0">'
-    +'<thead><tr><th>Name</th><th>Company Applied For</th><th>Designation</th><th>Profile</th><th>Joining Salary</th><th>Location</th><th>Date</th></tr></thead>'
-    +'<tbody>'+leads.map(l =>
-      '<tr>'
-      +'<td><div class="lead-name">'+esc(l.name)+'</div></td>'
-      +'<td style="font-size:12px;color:var(--text-2)">'+esc(l.current_company||'—')+'</td>'
-      +'<td style="font-size:12px">'+esc(l.designation||'—')+'</td>'
-      +'<td style="font-size:12px">'+esc(l.profile||'—')+'</td>'
-      +'<td style="font-size:12px;font-family:\'JetBrains Mono\',monospace">'+(l.joining_salary?'₹'+formatINR(+l.joining_salary):'—')+'</td>'
-      +'<td style="font-size:12px;color:var(--text-3)">'+esc(l.location||'—')+'</td>'
-      +'<td style="font-size:12px;color:var(--text-3)">'+(l.updated_at?formatDate(l.updated_at.split('T')[0]):'—')+'</td>'
-      +'</tr>'
-    ).join('')+'</tbody></table></div>'
-  ).join('');
+  const byAssoc = {};
+  filtered.forEach(l => {
+    const assignees = l.assigned_profiles ? l.assigned_profiles.map(ap => ap.profile).filter(Boolean) : [];
+    if (assignees.length) {
+      assignees.forEach(p => {
+        if (!byAssoc[p.name]) byAssoc[p.name] = { leads: [], avatar: p.avatar_initials || '?' };
+        byAssoc[p.name].leads.push(l);
+      });
+    } else {
+      if (!byAssoc['Unassigned']) byAssoc['Unassigned'] = { leads: [], avatar: '?' };
+      byAssoc['Unassigned'].leads.push(l);
+    }
+  });
+
+  el.innerHTML = Object.entries(byAssoc).map(([assoc, group]) => {
+    const leads = group.leads;
+    const totalSalary = leads.reduce((s, l) => s + (+l.joining_salary || 0), 0);
+    return '<div class="joining-group">'
+      + '<div class="joining-group-header">'
+      + '<div style="display:flex;align-items:center;gap:10px">'
+      + '<div class="user-avatar" style="width:34px;height:34px;font-size:13px;flex-shrink:0">'+esc(group.avatar)+'</div>'
+      + '<div><div class="joining-assoc-name">'+esc(assoc)+'</div>'
+      + '<div style="font-size:11px;color:var(--text-3);margin-top:1px">'+leads.length+' placement'+(leads.length!==1?'s':'')+(totalSalary?' · ₹'+formatINR(totalSalary)+' total':'')+'</div>'
+      + '</div></div>'
+      + '<span class="joining-assoc-count">'+leads.length+'</span>'
+      + '</div>'
+      + '<div class="joining-cards-grid">'
+      + leads.map(l =>
+          '<div class="joining-candidate-card">'
+          + '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">'
+          + '<div><div style="font-size:13px;font-weight:600;color:var(--text-1)">'+esc(l.name)+'</div>'
+          + '<div style="font-size:11px;color:var(--text-3);margin-top:2px">'+esc(l.current_company||'—')+'</div></div>'
+          + '<span style="background:#DCFCE7;color:#166534;font-size:10px;font-weight:600;padding:2px 8px;border-radius:10px;flex-shrink:0">Joined</span>'
+          + '</div>'
+          + '<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px">'
+          + '<div class="jc-field"><div class="jc-label">Designation</div><div class="jc-value">'+esc(l.designation||'—')+'</div></div>'
+          + '<div class="jc-field"><div class="jc-label">Profile</div><div class="jc-value">'+esc(l.profile||'—')+'</div></div>'
+          + '<div class="jc-field"><div class="jc-label">Location</div><div class="jc-value">'+esc(l.location||'—')+'</div></div>'
+          + '<div class="jc-field"><div class="jc-label">Joining Salary</div><div class="jc-value" style="color:var(--green);font-weight:600">'+(l.joining_salary?'₹'+formatINR(+l.joining_salary):'—')+'</div></div>'
+          + '</div>'
+          + '<div style="font-size:11px;color:var(--text-3);border-top:1px solid var(--border);padding-top:8px">📅 '+(l.updated_at?formatDate(l.updated_at.split('T')[0]):'—')+'</div>'
+          + '</div>'
+        ).join('')
+      + '</div></div>';
+  }).join('');
 }
 
 function exportJoiningsCSV() {
@@ -506,12 +531,18 @@ function exportJoiningsCSV() {
   const joined = state.leads.filter(l => l.stage === 'Joined');
   const selMonth = +(document.getElementById('joining-month')?.value || 0);
   const selYear = +(document.getElementById('joining-year')?.value || state.joiningYear);
+  const selAssoc = document.getElementById('joining-assoc-filter')?.value || '';
   let filtered = joined;
   if (selMonth && selYear) {
     filtered = joined.filter(l => {
       const d = new Date(l.updated_at || l.created_at);
       return d.getMonth()+1 === selMonth && d.getFullYear() === selYear;
     });
+  }
+  if (selAssoc) {
+    filtered = filtered.filter(l =>
+      l.assigned_profiles && l.assigned_profiles.some(ap => ap.profile?.id === selAssoc)
+    );
   }
   const headers = ['Name','Phone','Email','Company Applied For','Designation','Profile','Location','Joining Salary','Associate','Joined Date'];
   const rows = filtered.map(l => {
