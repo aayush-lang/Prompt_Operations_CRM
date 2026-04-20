@@ -50,13 +50,13 @@ const INDIA_CITIES = [
 ];
 const PLATFORM_OPTIONS = ['LinkedIn','Naukri','Shine','Indeed','Other'];
 
-// Stages where only minimal fields are required (Name, Mail, Profile, Number + always-required)
 const MINIMAL_REQUIRED_STAGES = ['Not Interested', 'DNP'];
 
 let state = {
   user:null, profile:null, profiles:[], leads:[], filteredLeads:[], reminders:[],
   tasks:[], activities:[],
   isAdmin: false,
+  isSuperAdmin: false,
   page:1, pageSize:20, sortCol:'created_at', sortDir:'desc',
   selectedLeads: new Set(),
   currentReminderFilter:'pending',
@@ -77,31 +77,76 @@ async function handleLogin() {
   try {
     const { data, error } = await db.auth.signInWithPassword({ email, password: pw });
     if (error) { showAuthError(error.message || 'Invalid credentials.'); btn.disabled = false; btn.textContent = 'Sign in'; return; }
-    await initApp(data.user);
+    await routeUser(data.user);
   } catch(e) {
     showAuthError('Connection error. Please try again.'); btn.disabled = false; btn.textContent = 'Sign in';
   }
 }
-async function handleLogout() {
-  await db.auth.signOut();
-  document.getElementById('app').style.display = 'none';
-  document.getElementById('auth-screen').style.display = 'flex';
-  state.user = null;
-}
-function showAuthError(msg) { const el = document.getElementById('auth-error'); el.textContent = msg; el.style.display = 'block'; }
-function showForgot() { const email = prompt('Enter your registered email:'); if (!email) return; db.auth.resetPasswordForEmail(email).then(() => alert('Password reset email sent!')); }
 
-// ── INIT ──
-async function initApp(user) {
+// ── ROUTE USER AFTER LOGIN ──
+// This is the single entry point for all post-login routing.
+// It fetches the profile, sets state, then decides where to send the user.
+async function routeUser(user) {
   state.user = user;
   const { data: prof } = await db.from('profiles').select('*').eq('id', user.id).single();
   state.profile = prof;
-  state.isAdmin = prof?.role === 'admin';
+  state.isSuperAdmin = prof?.role === 'super_admin';
+  state.isAdmin = prof?.role === 'admin' || prof?.role === 'super_admin';
 
-  document.getElementById('user-name').textContent = prof?.name?.split(' ')[0] || 'You';
-  document.getElementById('user-avatar').textContent = prof?.avatar_initials || '?';
+  document.getElementById('auth-screen').style.display = 'none';
+
+  if (state.isSuperAdmin) {
+    // Super admins see the workspace chooser
+    document.getElementById('ws-user-name').textContent = prof?.name?.split(' ')[0] || 'there';
+    document.getElementById('workspace-screen').style.display = 'flex';
+  } else {
+    // Admins and associates go straight into the app
+    await initApp();
+  }
+}
+
+// ── WORKSPACE CHOOSER ──
+async function chooseWorkspace(workspace) {
+  document.getElementById('workspace-screen').style.display = 'none';
+  if (workspace === 'recruit') {
+    await initApp();
+  } else {
+    document.getElementById('coming-soon-screen').style.display = 'flex';
+  }
+}
+
+function backToWorkspace() {
+  document.getElementById('coming-soon-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('workspace-screen').style.display = 'flex';
+}
+
+async function handleLogout() {
+  await db.auth.signOut();
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('workspace-screen').style.display = 'none';
+  document.getElementById('coming-soon-screen').style.display = 'none';
+  document.getElementById('auth-screen').style.display = 'flex';
+  state.user = null;
+  state.isSuperAdmin = false;
+  state.isAdmin = false;
+}
+
+function showAuthError(msg) { const el = document.getElementById('auth-error'); el.textContent = msg; el.style.display = 'block'; }
+function showForgot() { const email = prompt('Enter your registered email:'); if (!email) return; db.auth.resetPasswordForEmail(email).then(() => alert('Password reset email sent!')); }
+
+// ── INIT APP ──
+// Note: state.user, state.profile, state.isAdmin, state.isSuperAdmin
+// are all set by routeUser() before initApp() is called.
+async function initApp() {
+  document.getElementById('user-name').textContent = state.profile?.name?.split(' ')[0] || 'You';
+  document.getElementById('user-avatar').textContent = state.profile?.avatar_initials || '?';
   document.getElementById('auth-screen').style.display = 'none';
   document.getElementById('app').style.display = 'flex';
+
+  // Show the switch workspace button only for super admins
+  const switchBtn = document.getElementById('back-to-workspace-btn');
+  if (switchBtn) switchBtn.style.display = state.isSuperAdmin ? 'flex' : 'none';
 
   if (state.isAdmin) document.body.classList.add('is-admin');
   else document.body.classList.remove('is-admin');
@@ -738,8 +783,6 @@ async function saveLead() {
   const current_company = document.getElementById('lf-current-company').value.trim();
 
   const missing = [];
-
-  // ── Always required (all stages) ──
   if (!name) missing.push('Full Name');
   if (!email) missing.push('Mail ID');
   if (!phone) missing.push('Phone Number');
@@ -747,8 +790,6 @@ async function saveLead() {
   if (!current_company) missing.push('Company Applied For');
   if (!stage) missing.push('Candidate Status');
 
-  // ── Additional required fields for non-minimal stages ──
-  // DNP and Not Interested only need the above 6 fields
   const isMinimalStage = MINIMAL_REQUIRED_STAGES.includes(stage);
   if (!isMinimalStage) {
     if (!designation) missing.push('Designation');
@@ -757,10 +798,7 @@ async function saveLead() {
     if (!experience) missing.push('Total Experience');
   }
 
-  if (missing.length) {
-    alert('Please fill in required fields:\n• ' + missing.join('\n• '));
-    return;
-  }
+  if (missing.length) { alert('Please fill in required fields:\n• ' + missing.join('\n• ')); return; }
 
   const payload = {
     name, phone, email,
@@ -1295,6 +1333,7 @@ function toggleAdvancedFilters() { const el=document.getElementById('advanced-fi
 
 // ── GLOBALS ──
 window.handleLogin=handleLogin; window.handleLogout=handleLogout; window.showForgot=showForgot;
+window.chooseWorkspace=chooseWorkspace; window.backToWorkspace=backToWorkspace;
 window.openModal=openModal; window.closeModal=closeModal; window.overlayClose=overlayClose;
 window.openAddLead=openAddLead; window.openEditLead=openEditLead; window.saveLead=saveLead; window.deleteLead=deleteLead;
 window.openLeadDetail=openLeadDetail; window.changeStageFromPanel=changeStageFromPanel; window.assignLead=assignLead; window.removeAssignee=removeAssignee; window.postComment=postComment;
@@ -1313,5 +1352,5 @@ window.renderJoinings=renderJoinings; window.exportJoiningsCSV=exportJoiningsCSV
 
 (async () => {
   const { data: { session } } = await db.auth.getSession();
-  if (session?.user) { await initApp(session.user); }
+  if (session?.user) { await routeUser(session.user); }
 })();
