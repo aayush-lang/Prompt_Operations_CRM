@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Prompt Recruit</title>
+  <title>Prompt Ops</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -18,10 +18,10 @@
       <div class="auth-card">
         <div class="auth-brand">
           <span class="brand-dot"></span>
-          <span class="brand-text"><strong>Prompt</strong> Recruit</span>
+          <span class="brand-text"><strong>Prompt</strong> Consultants</span>
         </div>
         <h1 class="auth-title">Welcome back</h1>
-        <p class="auth-sub">Sign in to your recruitment workspace</p>
+        <p class="auth-sub">Sign in to your workspace</p>
         <div id="auth-error" class="auth-error" style="display:none"></div>
         <div class="field-group">
           <label>Email</label>
@@ -33,13 +33,55 @@
         </div>
         <button class="btn-auth" id="login-btn" onclick="handleLogin()">Sign in</button>
         <div class="auth-footer">
-          Prompt Consultants · Recruitment Ops · <a href="#" onclick="showForgot()">Forgot password?</a>
+          Prompt Consultants · <a href="#" onclick="showForgot()">Forgot password?</a>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- MAIN APP -->
+  <!-- WORKSPACE CHOOSER (super admin only) -->
+  <div id="workspace-screen" style="display:none">
+    <div class="ws-wrap">
+      <div class="ws-header">
+        <div class="auth-brand" style="justify-content:center;margin-bottom:0">
+          <span class="brand-dot"></span>
+          <span class="brand-text"><strong>Prompt</strong> Consultants</span>
+        </div>
+        <h1 class="ws-title">Choose your workspace</h1>
+        <p class="ws-sub">Welcome back, <span id="ws-user-name">there</span>. Where would you like to go?</p>
+      </div>
+      <div class="ws-grid">
+        <button class="ws-card" onclick="chooseWorkspace('recruit')">
+          <div class="ws-card-icon">🎯</div>
+          <div class="ws-card-name">Recruit CRM</div>
+          <div class="ws-card-desc">Candidates, pipeline, tasks & joinings</div>
+          <div class="ws-card-badge ws-badge-live">Live</div>
+        </button>
+        <button class="ws-card ws-card-soon" onclick="chooseWorkspace('sales')">
+          <div class="ws-card-icon">💼</div>
+          <div class="ws-card-name">Sales CRM</div>
+          <div class="ws-card-desc">Clients, deals & revenue pipeline</div>
+          <div class="ws-card-badge ws-badge-soon">Coming Soon</div>
+        </button>
+      </div>
+      <div class="ws-footer">
+        <button class="ws-logout-btn" onclick="handleLogout()">↩ Sign out</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- COMING SOON SCREEN (Sales CRM placeholder) -->
+  <div id="coming-soon-screen" style="display:none">
+    <div class="cs-wrap">
+      <div class="cs-icon">💼</div>
+      <h1 class="cs-title">Sales CRM</h1>
+      <p class="cs-sub">This workspace is under construction.<br/>Check back soon.</p>
+      <button class="btn-auth" style="max-width:220px;margin:0 auto" onclick="backToWorkspace()">← Back to workspaces</button>
+      <button class="ws-logout-btn" style="margin-top:16px" onclick="handleLogout()">↩ Sign out</button>
+    </div>
+  </div>
+
+  <!-- MAIN APP (Recruit CRM) -->
   <div id="app" style="display:none">
     <header class="topbar">
       <div class="topbar-left">
@@ -58,6 +100,10 @@
         </nav>
       </div>
       <div class="topbar-right">
+        <!-- Back to workspace button (super admin only) -->
+        <button id="back-to-workspace-btn" onclick="backToWorkspace()" style="display:none;align-items:center;gap:6px;padding:5px 12px;border:1px solid var(--border-strong);border-radius:var(--radius-sm);background:var(--surface-2);color:var(--text-2);font-size:12px;font-family:inherit;cursor:pointer;margin-right:10px">
+          ⇄ Switch workspace
+        </button>
         <div class="user-chip">
           <div class="user-avatar" id="user-avatar">AA</div>
           <span id="user-name">User</span>
@@ -223,7 +269,7 @@
           <div class="settings-card">
             <div class="settings-card-title">About</div>
             <p style="font-size:13px;color:var(--text-2);line-height:1.6">Prompt Recruit is an internal recruitment operations CRM for Prompt Consultants. Associates coordinate with candidates; admins manage tasks and assignments.</p>
-            <p style="font-size:12px;color:var(--text-3);margin-top:12px">Admins see all candidates. Associates see only their assigned candidates.</p>
+            <p style="font-size:12px;color:var(--text-3);margin-top:12px">Super Admins see all workspaces. Admins see their department. Associates see only their assigned candidates.</p>
           </div>
         </div>
       </section>
@@ -247,13 +293,13 @@
           <div class="form-field"><label>Full Name <span style="color:var(--red)">*</span></label><input id="lf-name" placeholder="Candidate name" /></div>
           <div class="form-field"><label>Phone Number <span style="color:var(--red)">*</span></label><input id="lf-phone" type="tel" placeholder="10-digit mobile" /></div>
           <div class="form-field"><label>Email ID <span style="color:var(--red)">*</span></label><input id="lf-email" type="email" placeholder="candidate@email.com" /></div>
-          <div class="form-field"><label>Company Applied For</label><input id="lf-current-company" placeholder="Company they are applying to" /></div>
+          <div class="form-field"><label>Company Applied For <span style="color:var(--red)">*</span></label><input id="lf-current-company" placeholder="Company they are applying to" /></div>
           <div class="form-field"><label>Current Package (₹) <span style="color:var(--red)">*</span></label><input id="lf-current-ctc" type="number" min="0" placeholder="e.g. 800000" /></div>
           <div class="form-field"><label>Expected CTC (₹)</label><input id="lf-expected-ctc" type="number" min="0" placeholder="e.g. 1200000" /></div>
           <div class="form-field"><label>Candidate Joining Salary (₹)</label><input id="lf-joining-salary" type="number" min="0" placeholder="Final joining package" /></div>
           <div class="form-field"><label>Total Experience <span style="color:var(--red)">*</span></label><select id="lf-experience"></select></div>
           <div class="form-field"><label>Designation <span style="color:var(--red)">*</span></label><select id="lf-designation"></select></div>
-          <div class="form-field"><label>Profile / Function</label><select id="lf-profile"></select></div>
+          <div class="form-field"><label>Profile / Function <span style="color:var(--red)">*</span></label><select id="lf-profile"></select></div>
           <div class="form-field"><label>Location <span style="color:var(--red)">*</span></label><select id="lf-location"></select></div>
           <div class="form-field"><label>Willing to Relocate?</label><select id="lf-relocate"></select></div>
           <div class="form-field"><label>Remote Preference?</label><select id="lf-remote"></select></div>
