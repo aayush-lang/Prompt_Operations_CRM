@@ -364,3 +364,11 @@ body.is-admin .admin-only { display: revert; }
 .joining-candidate-card:hover { box-shadow:var(--shadow-md); }
 .jc-label { font-size:10px; color:var(--text-3); text-transform:uppercase; letter-spacing:0.4px; margin-bottom:2px; }
 .jc-value { font-size:12px; color:var(--text-1); font-weight:500; }
+.joining-stats-bar { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+.joining-stat-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:1rem 1.25rem; box-shadow:var(--shadow); }
+.joining-stat-label { font-size:11px; color:var(--text-3); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px; }
+.joining-stat-value { font-size:22px; font-weight:700; }
+.joining-stat-value.purple { color:var(--purple); }
+.joining-stat-value.green { color:var(--green); }
+.joining-stat-value.amber { color:var(--amber); }
+@media(max-width:900px){ .joining-stats-bar { grid-template-columns:1fr 1fr; } }
