@@ -109,9 +109,9 @@ async function routeUser(user) {
 async function chooseWorkspace(workspace) {
   document.getElementById('workspace-screen').style.display = 'none';
   if (workspace === 'recruit') {
-    await initApp();
+    await initApp(state.user);
   } else {
-    document.getElementById('coming-soon-screen').style.display = 'flex';
+    window.location.href = 'sales/index.html';
   }
 }
 
