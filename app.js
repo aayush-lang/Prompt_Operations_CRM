@@ -983,6 +983,10 @@ async function removeAssignee(leadId, profileId) {
 
 async function changeStageFromPanel(leadId, stage) {
   const old = state.leads.find(l => l.id === leadId);
+  if (stage === 'Joined' && !old?.joining_salary) {
+    alert('Please set the Joining Salary before marking this candidate as Joined.\n\nClick Edit to add the joining salary first.');
+    return;
+  }
   await db.from('leads').update({ stage, updated_at: new Date().toISOString() }).eq('id', leadId);
   await db.from('activities').insert({ lead_id: leadId, user_id: state.user.id, type:'stage_change', text:'Stage changed from '+(old?.stage||'?')+' to '+stage });
   await loadLeads(); await loadActivities();
