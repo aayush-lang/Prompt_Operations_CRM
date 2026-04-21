@@ -1374,7 +1374,9 @@ function importCSV(event) {
 // ── SETTINGS ──
 async function inviteTeamMember() {
   const email = document.getElementById('invite-email').value.trim(); if (!email) return;
-  alert('Go to Supabase → Authentication → Users → Add user\n\nEmail: '+email);
+  const dept = document.getElementById('invite-department').value;
+  const deptLabel = { recruit: 'Recruit CRM only', sales: 'Sales CRM only', both: 'Both CRMs' }[dept];
+  alert('To add this team member:\n\n1. Go to Supabase → Authentication → Users → Add user\n2. Email: ' + email + '\n3. After they log in once, run this SQL:\n\nUPDATE profiles SET department = \'' + dept + '\' WHERE email = \'' + email + '\';\n\nAccess: ' + deptLabel);
   document.getElementById('invite-email').value='';
 }
 
