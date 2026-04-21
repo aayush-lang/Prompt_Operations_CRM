@@ -848,6 +848,9 @@ async function saveLead() {
     if (!current_ctc) missing.push('Current Package');
     if (!experience) missing.push('Total Experience');
   }
+  if (stage === 'Joined' && !document.getElementById('lf-joining-salary').value) {
+    missing.push('Joining Salary (required when stage is Joined)');
+  }
 
   if (missing.length) { alert('Please fill in required fields:\n• ' + missing.join('\n• ')); return; }
 
