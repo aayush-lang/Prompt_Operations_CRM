@@ -147,7 +147,8 @@
         <div class="filter-bar">
           <input class="search-input" type="search" id="search-q" placeholder="Search name, company, email, phone…" oninput="debounceFilter()" />
           <select id="f-stage" class="filter-sel" onchange="applyFilters()"><option value="">All stages</option></select>
-          <select id="f-profile" class="filter-sel" onchange="applyFilters()"><option value="">All profiles</option></select>
+          <select id="f-profile" class="filter-sel" onchange="applyFilters()"><option value="">All departments</option></select>
+          <input class="search-input" type="search" id="f-job-profile" placeholder="Filter by profile…" oninput="debounceFilter()" style="min-width:160px;flex:0" />
           <select id="f-location" class="filter-sel" onchange="applyFilters()"><option value="">All locations</option></select>
           <select id="f-relocation" class="filter-sel" onchange="applyFilters()"><option value="">Any relocation</option></select>
           <select id="f-assigned" class="filter-sel admin-only" onchange="applyFilters()"><option value="">All members</option></select>
@@ -172,7 +173,7 @@
                 <th class="sortable" data-col="name">Name / Company Applied For</th>
                 <th>Contact</th>
                 <th class="sortable" data-col="stage">Stage</th>
-                <th>Profile</th>
+                <th>Department</th><th>Profile</th>
                 <th class="sortable" data-col="location">Location</th>
                 <th class="sortable" data-col="current_ctc">Current CTC</th>
                 <th>Assigned</th>
@@ -181,7 +182,7 @@
                 <th></th>
               </tr>
             </thead>
-            <tbody id="leads-tbody"><tr><td colspan="11" class="empty-row"><div class="loader"></div></td></tr></tbody>
+            <tbody id="leads-tbody"><tr><td colspan="12" class="empty-row"><div class="loader"></div></td></tr></tbody>
           </table>
           <div class="table-footer">
             <div class="bulk-actions" id="bulk-actions" style="display:none">
@@ -307,7 +308,8 @@
           <div class="form-field"><label>Candidate Joining Salary (₹)</label><input id="lf-joining-salary" type="number" min="0" placeholder="Final joining package" /></div>
           <div class="form-field"><label>Total Experience <span style="color:var(--red)">*</span></label><select id="lf-experience"></select></div>
           <div class="form-field"><label>Designation <span style="color:var(--red)">*</span></label><select id="lf-designation"></select></div>
-          <div class="form-field"><label>Profile / Function <span style="color:var(--red)">*</span></label><select id="lf-profile"></select></div>
+          <div class="form-field"><label>Department <span style="color:var(--red)">*</span></label><select id="lf-profile"></select></div>
+<div class="form-field"><label>Profile <span style="color:var(--red)">*</span></label><input id="lf-job-profile" placeholder="e.g. Sales Manager, HR Executive" /></div>
           <div class="form-field"><label>Location <span style="color:var(--red)">*</span></label><select id="lf-location"></select></div>
           <div class="form-field"><label>Willing to Relocate?</label><select id="lf-relocate"></select></div>
           <div class="form-field"><label>Remote Preference?</label><select id="lf-remote"></select></div>
