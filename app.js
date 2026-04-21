@@ -437,21 +437,22 @@ function renderJoinings() {
 
   const monthSel = document.getElementById('joining-month');
   const yearSel = document.getElementById('joining-year');
-  if (monthSel && !monthSel.innerHTML) {
-    monthSel.innerHTML = '<option value="">All months</option>' + monthNames.map((m,i) => '<option value="'+(i+1)+'" '+(i+1===now.getMonth()+1?'selected':'')+'>'+m+'</option>').join('');
-    state.joiningMonth = String(now.getMonth()+1);
+  const currentMonth = monthSel?.value || String(now.getMonth()+1);
+  const currentYear = yearSel?.value || String(now.getFullYear());
+  if (monthSel) {
+    monthSel.innerHTML = '<option value="">All months</option>' + monthNames.map((m,i) => '<option value="'+(i+1)+'" '+(String(i+1)===currentMonth?'selected':'')+'>'+m+'</option>').join('');
   }
-  if (yearSel && !yearSel.innerHTML) {
+  if (yearSel) {
     const years = [];
     for (let y = now.getFullYear(); y >= now.getFullYear()-3; y--) years.push(y);
-    yearSel.innerHTML = years.map(y => '<option value="'+y+'" '+(y===state.joiningYear?'selected':'')+'>'+y+'</option>').join('');
+    yearSel.innerHTML = years.map(y => '<option value="'+y+'" '+(String(y)===currentYear?'selected':'')+'>'+y+'</option>').join('');
   }
 
   const assocFilterEl = document.getElementById('joining-assoc-filter');
-  if (assocFilterEl && !assocFilterEl.dataset.init) {
+  const currentAssoc = assocFilterEl?.value || '';
+  if (assocFilterEl) {
     assocFilterEl.innerHTML = '<option value="">All associates</option>'
-      + state.profiles.map(p => '<option value="'+p.id+'">'+esc(p.name)+'</option>').join('');
-    assocFilterEl.dataset.init = '1';
+      + state.profiles.map(p => '<option value="'+p.id+'" '+(p.id===currentAssoc?'selected':'')+'>'+esc(p.name)+'</option>').join('');
   }
 
   const selMonth = +(document.getElementById('joining-month')?.value || state.joiningMonth || 0);
