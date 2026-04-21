@@ -264,10 +264,15 @@
           <div class="settings-card">
             <div class="settings-card-title">Team Members</div>
             <div id="team-list"></div>
-            <div style="margin-top:1rem;display:flex;gap:8px">
-              <input class="search-input" id="invite-email" placeholder="colleague@promptconsultants.in" style="flex:1" />
-              <button class="btn-primary" onclick="inviteTeamMember()">Invite</button>
-            </div>
+            <div style="margin-top:1rem;display:flex;gap:8px;flex-wrap:wrap">
+  <input class="search-input" id="invite-email" placeholder="colleague@promptconsultants.in" style="flex:1;min-width:200px" />
+  <select id="invite-department" class="filter-sel">
+    <option value="recruit">Recruit CRM</option>
+    <option value="sales">Sales CRM</option>
+    <option value="both">Both CRMs</option>
+  </select>
+  <button class="btn-primary" onclick="inviteTeamMember()">Invite</button>
+</div>
           </div>
           <div class="settings-card">
             <div class="settings-card-title">About</div>
