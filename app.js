@@ -54,23 +54,33 @@ async function handleLogin() {
   } catch(e) { showAuthError('Connection error. Please try again.'); btn.disabled = false; btn.textContent = 'Sign in'; }
 }
 
+// ── ROUTE USER — upgraded: redirects sales associates to Sales CRM automatically ──
 async function routeUser(user) {
   state.user = user;
   const { data: prof } = await db.from('profiles').select('*').eq('id', user.id).single();
   state.profile = prof;
   state.isSuperAdmin = prof?.role === 'super_admin';
   state.isAdmin = prof?.role === 'admin' || prof?.role === 'super_admin';
+
+  // If sales-only associate lands on Recruit CRM, redirect them to Sales CRM
+  if (prof?.department === 'sales' && prof?.role === 'associate') {
+    window.location.href = './sales/index.html';
+    return;
+  }
+
   document.getElementById('auth-screen').style.display = 'none';
   if (state.isSuperAdmin) {
     document.getElementById('ws-user-name').textContent = prof?.name?.split(' ')[0] || 'there';
     document.getElementById('workspace-screen').style.display = 'flex';
-  } else { await initApp(); }
+  } else {
+    await initApp();
+  }
 }
 
 async function chooseWorkspace(workspace) {
   document.getElementById('workspace-screen').style.display = 'none';
-  if (workspace === 'recruit') { await initApp(state.user); }
-  else { window.location.href = 'sales/index.html'; }
+  if (workspace === 'recruit') { await initApp(); }
+  else { window.location.href = './sales/index.html'; }
 }
 
 function backToWorkspace() {
@@ -114,8 +124,12 @@ async function initApp() {
     .subscribe();
 }
 
+// ── LOAD PROFILES — upgraded: only loads recruit + both, keeps sales separate ──
 async function loadProfiles() {
-  const { data } = await db.from('profiles').select('*').order('name');
+  const { data } = await db.from('profiles')
+    .select('*')
+    .in('department', ['recruit', 'both'])
+    .order('name');
   if (data) state.profiles = data;
   populateAssignedSelects();
 }
@@ -397,14 +411,10 @@ function exportJoiningsCSV() {
 }
 
 function populateSelects() {
-  const fstage = document.getElementById('f-stage');
-  if (fstage) fstage.innerHTML = '<option value="">All stages</option>' + STAGES.map(s => '<option>'+s+'</option>').join('');
-  const fprofile = document.getElementById('f-profile');
-  if (fprofile) fprofile.innerHTML = '<option value="">All departments</option>' + PROFILE_OPTIONS.map(s => '<option>'+s+'</option>').join('');
-  const floc = document.getElementById('f-location');
-  if (floc) floc.innerHTML = '<option value="">All locations</option>' + INDIA_CITIES.map(c => '<option>'+c+'</option>').join('');
-  const freloc = document.getElementById('f-relocation');
-  if (freloc) freloc.innerHTML = '<option value="">Any relocation</option><option value="Yes">Willing to relocate</option><option value="No">Not willing</option>';
+  const fstage = document.getElementById('f-stage'); if (fstage) fstage.innerHTML = '<option value="">All stages</option>' + STAGES.map(s => '<option>'+s+'</option>').join('');
+  const fprofile = document.getElementById('f-profile'); if (fprofile) fprofile.innerHTML = '<option value="">All departments</option>' + PROFILE_OPTIONS.map(s => '<option>'+s+'</option>').join('');
+  const floc = document.getElementById('f-location'); if (floc) floc.innerHTML = '<option value="">All locations</option>' + INDIA_CITIES.map(c => '<option>'+c+'</option>').join('');
+  const freloc = document.getElementById('f-relocation'); if (freloc) freloc.innerHTML = '<option value="">Any relocation</option><option value="Yes">Willing to relocate</option><option value="No">Not willing</option>';
   const expEl = document.getElementById('lf-experience'); if (expEl) expEl.innerHTML = '<option value=""></option>' + EXPERIENCE_OPTIONS.map(o => '<option>'+o+'</option>').join('');
   const desEl = document.getElementById('lf-designation'); if (desEl) desEl.innerHTML = '<option value=""></option>' + DESIGNATION_OPTIONS.map(o => '<option>'+o+'</option>').join('');
   const profEl = document.getElementById('lf-profile'); if (profEl) profEl.innerHTML = '<option value=""></option>' + PROFILE_OPTIONS.map(o => '<option>'+o+'</option>').join('');
@@ -418,8 +428,7 @@ function populateSelects() {
 function populateAssignedSelects() {
   const opts = state.profiles.map(p => '<option value="'+p.id+'">'+esc(p.name)+'</option>').join('');
   const rfAssigned = document.getElementById('rf-assigned'); if (rfAssigned) rfAssigned.innerHTML = '<option value="">Unassigned</option>'+opts;
-  const tl = document.getElementById('team-list');
-  if (tl) tl.innerHTML = state.profiles.map(p => '<div class="team-member-row"><div class="tm-info"><div class="tm-avatar">'+(p.avatar_initials||'?')+'</div><div><div style="font-weight:500">'+esc(p.name)+'</div><div style="font-size:11px;color:var(--text-3)">'+esc(p.email)+'</div></div></div><span class="tm-role">'+p.role+'</span></div>').join('');
+  const tl = document.getElementById('team-list'); if (tl) tl.innerHTML = state.profiles.map(p => '<div class="team-member-row"><div class="tm-info"><div class="tm-avatar">'+(p.avatar_initials||'?')+'</div><div><div style="font-weight:500">'+esc(p.name)+'</div><div style="font-size:11px;color:var(--text-3)">'+esc(p.email)+'</div></div></div><span class="tm-role">'+p.role+'</span></div>').join('');
   const baSelect = document.getElementById('bulk-assign-select'); if (baSelect) baSelect.innerHTML = '<option value="">Select associate…</option>'+opts;
   const fAssigned = document.getElementById('f-assigned'); if (fAssigned) fAssigned.innerHTML = '<option value="">All members</option>'+opts;
 }
@@ -596,6 +605,18 @@ async function saveLead() {
   const profile = document.getElementById('lf-profile').value;
   const job_profile = document.getElementById('lf-job-profile').value.trim();
   const current_company = document.getElementById('lf-current-company').value.trim();
+
+  // Duplicate check
+  if (!state.editLeadId) {
+    const dupPhone = phone && state.leads.find(l => l.phone === phone);
+    const dupEmail = email && state.leads.find(l => l.email === email);
+    const dup = dupPhone || dupEmail;
+    if (dup) {
+      const proceed = confirm('⚠️ Duplicate detected!\n\nA candidate with this '+(dupPhone?'phone number':'email')+' already exists:\n• Name: '+dup.name+'\n• Stage: '+dup.stage+'\n\nDo you still want to add this candidate?');
+      if (!proceed) return;
+    }
+  }
+
   const missing = [];
   if (!name) missing.push('Full Name');
   if (!email) missing.push('Mail ID');
@@ -613,6 +634,7 @@ async function saveLead() {
   }
   if (stage === 'Joined' && !document.getElementById('lf-joining-salary').value) { missing.push('Joining Salary (required when stage is Joined)'); }
   if (missing.length) { alert('Please fill in required fields:\n• ' + missing.join('\n• ')); return; }
+
   const payload = {
     name, phone, email,
     current_ctc: +current_ctc||null,
@@ -797,7 +819,7 @@ function renderTasks() {
 
 function openAddTask() {
   state.editTaskId = null;
-  ['task-modal-title'].forEach(id => document.getElementById(id) && (document.getElementById(id).textContent = 'New Task'));
+  document.getElementById('task-modal-title').textContent = 'New Task';
   document.getElementById('edit-task-id').value = '';
   document.getElementById('ta-title').value = '';
   document.getElementById('ta-notes').value = '';
