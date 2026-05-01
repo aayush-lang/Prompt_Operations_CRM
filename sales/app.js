@@ -79,6 +79,10 @@ async function initApp(user) {
   if (state.isAdmin) document.body.classList.add('is-admin');
   else document.body.classList.remove('is-admin');
 
+  // Only super admins can switch workspace
+  const switchBtn = document.querySelector('.switch-btn');
+  if (switchBtn) switchBtn.style.display = state.isSuperAdmin ? 'inline-flex' : 'none';
+
   populateSelects();
   await Promise.all([loadProfiles(), loadLeads(), loadReminders(), loadEnquiries(), loadActivities()]);
   renderDashboard(); renderLeads(); renderReminders(); renderEnquiries();
