@@ -103,8 +103,13 @@ async function initApp(user) {
 }
 
 // ── DATA LOADERS ──
+
+// ── LOAD PROFILES — upgraded: only loads sales + both, keeps recruit separate ──
 async function loadProfiles() {
-  const { data } = await db.from('profiles').select('*').order('name');
+  const { data } = await db.from('profiles')
+    .select('*')
+    .in('department', ['sales', 'both'])
+    .order('name');
   if (data) state.profiles = data;
   populateAssignedSelects();
 }
@@ -505,7 +510,8 @@ async function saveLead() {
   const editId = state.editLeadId;
   if (editId) {
     const old = state.leads.find(l => l.id === editId);
-    await db.from('sales_leads').update(payload).eq('id', editId);
+    const { error } = await db.from('sales_leads').update(payload).eq('id', editId);
+    if (error) { alert('Failed to save lead:\n' + error.message); return; }
     if (old && old.stage !== payload.stage) {
       await db.from('sales_activities').insert({ lead_id: editId, user_id: state.user.id, type: 'stage_change', text: 'Stage changed from ' + old.stage + ' to ' + payload.stage });
     } else {
@@ -513,7 +519,8 @@ async function saveLead() {
     }
   } else {
     payload.created_by = state.user.id;
-    const { data } = await db.from('sales_leads').insert(payload).select().single();
+    const { data, error } = await db.from('sales_leads').insert(payload).select().single();
+    if (error) { alert('Failed to save lead:\n' + error.message); return; }
     if (data) await db.from('sales_activities').insert({ lead_id: data.id, user_id: state.user.id, type: 'created', text: 'Lead created' });
   }
   closeModal('add-lead-modal');
@@ -577,7 +584,8 @@ async function openLeadDetail(id) {
 async function assignLead(leadId) {
   const newOwner = document.getElementById('assign-select').value;
   const ownerName = state.profiles.find(p => p.id === newOwner)?.name || 'Unassigned';
-  await db.from('sales_leads').update({ assigned_to: newOwner || null, updated_at: new Date().toISOString() }).eq('id', leadId);
+  const { error } = await db.from('sales_leads').update({ assigned_to: newOwner || null, updated_at: new Date().toISOString() }).eq('id', leadId);
+  if (error) { alert('Failed to assign:\n' + error.message); return; }
   await db.from('sales_activities').insert({ lead_id: leadId, user_id: state.user.id, type: 'edit', text: 'Assigned to ' + ownerName });
   await loadLeads(); renderLeads(); openLeadDetail(leadId);
 }
